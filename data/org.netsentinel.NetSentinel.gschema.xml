@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="org.netsentinel.NetSentinel" path="/org/netsentinel/NetSentinel/">
+    <key name="network-interface" type="s">
+      <default>"wlan0"</default>
+      <summary>Network Interface</summary>
+      <description>The physical network interface used for network discovery and packet capture.</description>
+    </key>
+    <key name="gemini-api-key-ref" type="s">
+      <default>"keyring:netsentinel/gemini_api_key"</default>
+      <summary>Gemini API Key Reference</summary>
+      <description>Logical reference identifier for the Gemini API Key stored in Keyring.</description>
+    </key>
+    <key name="retention-period-days" type="i">
+      <default>30</default>
+      <summary>Log Retention Period</summary>
+      <description>Number of days to preserve session data before automatic purging.</description>
+    </key>
+    <key name="store-hosts" type="b">
+      <default>true</default>
+      <summary>Store Discovered Hosts</summary>
+      <description>Whether discovered hosts can be stored in the session database.</description>
+    </key>
+    <key name="store-history" type="b">
+      <default>true</default>
+      <summary>Store Session History</summary>
+      <description>Whether session scan history and alerts can be stored.</description>
+    </key>
+  </schema>
+</schemalist>

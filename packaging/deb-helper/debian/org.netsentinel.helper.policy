@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<policyconfig>
+  <vendor>NetSentinel Project</vendor>
+  <vendor_url>https://github.com/tony-charmant/Black_Network</vendor_url>
+
+  <action id="org.netsentinel.scan.active">
+    <description>Run active network scans (arp-scan and nmap)</description>
+    <message>Authentication is required to perform privileged network scanning.</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+
+  <action id="org.netsentinel.capture.start">
+    <description>Start packet capturing via dumpcap</description>
+    <message>Authentication is required to capture network traffic.</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+
+  <action id="org.netsentinel.proxy.start">
+    <description>Start MitM web interceptor proxy</description>
+    <message>Authentication is required to intercept web traffic.</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+</policyconfig>

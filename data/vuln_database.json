@@ -1,0 +1,35 @@
+{
+  "title": "NetSentinel Service Vulnerability Database",
+  "version": "1.0",
+  "last_updated": "2026-07-19",
+  "profiles": [
+    {
+      "service": "OpenSSH",
+      "regex": "OpenSSH_[1-7]\\.[0-9]|OpenSSH_8\\.[0-3]",
+      "cve": "CVE-2024-6387",
+      "summary": "regreSSHion: RCE vulnerability in OpenSSH server due to signal handler race condition.",
+      "severity": "CRITICAL"
+    },
+    {
+      "service": "Apache",
+      "regex": "Apache/2\\.4\\.([1-9]|1[0-9]|2[0-9]|3[0-9]|4[0-9]|5[0-1])",
+      "cve": "CVE-2021-41773",
+      "summary": "Path traversal and file disclosure vulnerability via malformed URL structures.",
+      "severity": "HIGH"
+    },
+    {
+      "service": "Nginx",
+      "regex": "nginx/1\\.([0-9]|1[0-9]|20)\\.[0-9]|nginx/1\\.21\\.[0-5]",
+      "cve": "CVE-2022-27404",
+      "summary": "Nginx mp4 module boundary error leading to memory disclosure or crashes.",
+      "severity": "MEDIUM"
+    },
+    {
+      "service": "Dropbear",
+      "regex": "dropbear_20(1[0-9]|2[0-2])",
+      "cve": "CVE-2023-38200",
+      "summary": "Dropbear SSH version contains potential buffer vulnerability under specific configurations.",
+      "severity": "MEDIUM"
+    }
+  ]
+}
