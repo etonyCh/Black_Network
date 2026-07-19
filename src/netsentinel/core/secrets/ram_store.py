@@ -10,7 +10,7 @@ SHM_DIR = Path("/dev/shm")  # nosec B108
 class RamStore:
     def __init__(self) -> None:
         self.key = Fernet.generate_key()
-        self.fernet = Fernet(self.key)
+        self.fernet: Fernet = Fernet(self.key)
         self.active_ids = set()  # type: set[str]
 
     def store(self, payload: str) -> str:

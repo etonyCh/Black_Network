@@ -39,7 +39,8 @@ class KeyringStore:
             return self._fallback_store.get(key_name)
 
         try:
-            return keyring.get_password(APP_NAME, key_name)
+            val = keyring.get_password(APP_NAME, key_name)
+            return str(val) if val is not None else None
         except Exception:
             # Fallback lookup
             return self._fallback_store.get(key_name)
