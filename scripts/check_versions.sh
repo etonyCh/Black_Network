@@ -98,7 +98,7 @@ apt_requirements = [
     ("libgtk-4-1", "4.14"),
     ("libadwaita-1-0", "1.5"),
     ("python3-gi", "3.48"),
-    ("blueprint-compiler", "0.14"),
+    ("blueprint-compiler", "0.12"),
     ("nmap", "7.94"),
     ("tshark", "4.2.2"),
     ("arp-scan", "1.10"),
