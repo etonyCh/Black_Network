@@ -92,9 +92,15 @@ jobs:
 
           cat <<'EOF' > build_deb/usr/bin/netsentinel
           #!/bin/bash
-          exec python3 -m netsentinel.helperd.dbus_service --session "$@"
+          exec python3 -m netsentinel.ui.main "$@"
           EOF
           chmod +x build_deb/usr/bin/netsentinel
+
+          cat <<'EOF' > build_deb/usr/bin/netsentinel-helperd
+          #!/bin/bash
+          exec python3 -m netsentinel.helperd.dbus_service "$@"
+          EOF
+          chmod +x build_deb/usr/bin/netsentinel-helperd
 
           dpkg-deb --build build_deb netsentinel_0.1.0_all.deb
 

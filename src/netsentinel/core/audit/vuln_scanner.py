@@ -8,11 +8,18 @@ from typing import Any
 DEFAULT_VULN_DB_PATH = (
     Path(__file__).parent.parent.parent.parent.parent / "data" / "vuln_database.json"
 )
+SYSTEM_VULN_DB_PATH = Path("/usr/share/netsentinel/data/vuln_database.json")
 
 
 class VulnScanner:
-    def __init__(self, db_path: Path | str = DEFAULT_VULN_DB_PATH):
-        self.db_path = Path(db_path)
+    def __init__(self, db_path: Path | str | None = None):
+        if db_path:
+            self.db_path = Path(db_path)
+        elif DEFAULT_VULN_DB_PATH.exists():
+            self.db_path = DEFAULT_VULN_DB_PATH
+        else:
+            self.db_path = SYSTEM_VULN_DB_PATH
+
         self.profiles = []  # type: list[dict[str, Any]]
         self._load_database()
 

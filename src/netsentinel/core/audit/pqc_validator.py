@@ -5,12 +5,19 @@ from pathlib import Path
 DEFAULT_REFERENCE_PATH = (
     Path(__file__).parent.parent.parent.parent.parent / "data" / "pqc_nist_reference.json"
 )
+SYSTEM_REFERENCE_PATH = Path("/usr/share/netsentinel/data/pqc_nist_reference.json")
 EXPECTED_HASH = "f070bd913871ff7eaacd2706d5c6e704ffc410d27c43dc7a1a5c4f440c3339db"
 
 
 class PQCValidator:
-    def __init__(self, reference_path: Path | str = DEFAULT_REFERENCE_PATH):
-        self.reference_path = Path(reference_path)
+    def __init__(self, reference_path: Path | str | None = None):
+        if reference_path:
+            self.reference_path = Path(reference_path)
+        elif DEFAULT_REFERENCE_PATH.exists():
+            self.reference_path = DEFAULT_REFERENCE_PATH
+        else:
+            self.reference_path = SYSTEM_REFERENCE_PATH
+
         self.ciphers_db = {}  # type: dict[str, str]
         self._load_reference()
 
