@@ -56,11 +56,7 @@ class ReportView(Adw.NavigationPage):  # type: ignore[misc]
         )
         box.append(group_export)
 
-        self.entry_password = Adw.EntryRow(
-            title="Archive Password",
-            subtitle="Optional: sets password for compressed ZIP export",
-            visibility=False,
-        )
+        self.entry_password = Adw.EntryRow(title="Archive Password")
         group_export.add(self.entry_password)
 
         self.btn_compile = Gtk.Button(label="Compile and Anchor Report (RE-03)")

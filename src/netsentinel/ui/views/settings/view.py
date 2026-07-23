@@ -48,7 +48,7 @@ class SettingsView(Adw.PreferencesPage):  # type: ignore[misc]
         self.add(group_api)
 
         # Keyring Row for Gemini API key
-        self.api_entry_row = Adw.EntryRow(title="Gemini API Key", secret=True)
+        self.api_entry_row = Adw.PasswordEntryRow(title="Gemini API Key")
         group_api.add(self.api_entry_row)
 
         # Load API key reference from Keyring if present

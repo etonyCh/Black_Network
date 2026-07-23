@@ -32,9 +32,7 @@ class FingerprintView(Adw.NavigationPage):  # type: ignore[misc]
         group_target = Adw.PreferencesGroup(title="Scan Scope Settings")
         box.append(group_target)
 
-        self.target_entry = Adw.EntryRow(
-            title="Scan Target Host", placeholder_text="e.g. 192.168.1.1, example.com"
-        )
+        self.target_entry = Adw.EntryRow(title="Scan Target Host")
         group_target.add(self.target_entry)
 
         # Combo selector for scan mode

@@ -29,15 +29,10 @@ class TrafficView(Adw.NavigationPage):  # type: ignore[misc]
         group_settings = Adw.PreferencesGroup(title="Sniffer Settings")
         box.append(group_settings)
 
-        self.interface_entry = Adw.EntryRow(
-            title="Network Interface", text="wlan0", placeholder_text="e.g. wlan0, eth0"
-        )
+        self.interface_entry = Adw.EntryRow(title="Network Interface", text="wlan0")
         group_settings.add(self.interface_entry)
 
-        self.filter_entry = Adw.EntryRow(
-            title="BPF Capture Filter",
-            placeholder_text="e.g. tcp port 80 or udp port 53 (Optional)",
-        )
+        self.filter_entry = Adw.EntryRow(title="BPF Capture Filter")
         group_settings.add(self.filter_entry)
 
         # Control buttons
@@ -58,7 +53,7 @@ class TrafficView(Adw.NavigationPage):  # type: ignore[misc]
         group_stats.add(self.lbl_stats)
 
         # 3. Live packets and alerts section
-        group_logs = Adw.PreferencesGroup(title="Recent Packets & Security Alerts")
+        group_logs = Adw.PreferencesGroup(title="Recent Packets &amp; Security Alerts")
         box.append(group_logs)
 
         # ListBox to hold live logs

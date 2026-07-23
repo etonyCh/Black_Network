@@ -33,19 +33,13 @@ class AuditView(Adw.NavigationPage):  # type: ignore[misc]
         )
         box.append(group_spoof)
 
-        self.interface_row = Adw.EntryRow(
-            title="Interface", text="wlan0", placeholder_text="e.g. wlan0"
-        )
+        self.interface_row = Adw.EntryRow(title="Interface", text="wlan0")
         group_spoof.add(self.interface_row)
 
-        self.target_row = Adw.EntryRow(
-            title="Target Host IP", placeholder_text="e.g. 192.168.1.100"
-        )
+        self.target_row = Adw.EntryRow(title="Target Host IP")
         group_spoof.add(self.target_row)
 
-        self.gateway_row = Adw.EntryRow(
-            title="Gateway Router IP", placeholder_text="e.g. 192.168.1.1"
-        )
+        self.gateway_row = Adw.EntryRow(title="Gateway Router IP")
         group_spoof.add(self.gateway_row)
 
         self.btn_spoof = Gtk.Button(label="Start ARP Spoof")
@@ -57,9 +51,7 @@ class AuditView(Adw.NavigationPage):  # type: ignore[misc]
         group_scan = Adw.PreferencesGroup(title="Active Service Vulnerability Scan")
         box.append(group_scan)
 
-        self.scan_target_row = Adw.EntryRow(
-            title="Scan Target Host", placeholder_text="e.g. 192.168.1.100"
-        )
+        self.scan_target_row = Adw.EntryRow(title="Scan Target Host")
         group_scan.add(self.scan_target_row)
 
         self.scan_port_row = Adw.SpinRow(

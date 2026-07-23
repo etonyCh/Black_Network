@@ -39,7 +39,8 @@ class NetSentinelWindow(Adw.ApplicationWindow):  # type: ignore[misc]
         self.set_content(main_box)
 
         # Sidebar navigation stack
-        self.stack = Adw.ViewStack()
+        self.stack = Gtk.Stack()
+        self.stack.set_transition_type(Gtk.StackTransitionType.SLIDE_LEFT_RIGHT)
 
         sidebar = Gtk.StackSidebar()
         sidebar.set_stack(self.stack)
