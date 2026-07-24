@@ -37,7 +37,7 @@ class NetworkMapView(Adw.NavigationPage):  # type: ignore[misc]
         self.drawing_area.queue_draw()
 
     def _draw_map(
-        self, _area: Gtk.DrawingArea, cr: object, width: int, height: int, _data: object
+        self, _area: Gtk.DrawingArea, cr: object, width: int, height: int, _data: object = None
     ) -> None:
         # cr is a cairo.Context. In Python type hints, it's passed as object.
         # Since cairo is dynamically loaded, we access its draw methods directly.

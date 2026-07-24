@@ -56,7 +56,11 @@ def is_in_scope(target: str, scope_list: list[str]) -> bool:
     """
     Checks if a target (IP or Domain) is within the allowed scope list.
     Scope list elements can be IPs, CIDRs, or Domains.
+    If scope_list is empty, defaults to allowing private RFC1918 network ranges.
     """
+    if not scope_list:
+        scope_list = ["192.168.0.0/16", "10.0.0.0/8", "172.16.0.0/12", "127.0.0.1/32"]
+
     # 1. Normalize target: check if it's IP or Domain
     target_is_ip = is_valid_ip(target)
     target_ips = [target] if target_is_ip else resolve_domain(target)

@@ -24,6 +24,10 @@ def test_gsettings_schema_loading():
             f"Ensure it is compiled. Error: {e}"
         )
 
+    # Reset to defaults before checking schema values
+    settings.reset("network-interface")
+    settings.reset("retention-period-days")
+
     # Check default values defined in XML schema
     assert settings.get_string("network-interface") == "wlan0"
     assert settings.get_string("gemini-api-key-ref") == "keyring:netsentinel/gemini_api_key"
