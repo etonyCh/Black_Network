@@ -6,7 +6,7 @@ import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw, Gio, Gtk  # noqa: E402
+from gi.repository import Adw, Gio, GLib, Gtk  # noqa: E402
 
 from netsentinel.core.audit.ledger import AuditLedger  # noqa: E402
 from netsentinel.core.audit.pqc_validator import PQCValidator  # noqa: E402

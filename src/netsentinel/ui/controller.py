@@ -8,7 +8,7 @@ from gi.repository import Gio, GLib
 class NetSentinelController:
     def __init__(self, app_window: Any) -> None:
         self.app = app_window
-        self.proxy = None
+        self.proxy: Any = None
         self._init_dbus()
 
     def _init_dbus(self) -> None:
@@ -28,7 +28,9 @@ class NetSentinelController:
         except Exception as e:
             logging.error("Failed to connect to DBus Helper: %s", e)
 
-    def _on_dbus_signal(self, proxy: Any, sender_name: str, signal_name: str, parameters: Any) -> None:
+    def _on_dbus_signal(
+        self, _proxy: Any, _sender_name: str, signal_name: str, parameters: Any
+    ) -> None:
         if signal_name == "PacketCaptured":
             metadata = parameters.unpack()[0]
             GLib.idle_add(self.app.view_traffic.handle_packet_metadata, metadata)
@@ -40,7 +42,7 @@ class NetSentinelController:
         if not self.proxy:
             logging.error("DBus proxy not initialized")
             return
-        
+
         def _call_done(obj: Any, result: Any) -> None:
             try:
                 res = obj.call_finish(result)
@@ -109,7 +111,7 @@ class NetSentinelController:
             try:
                 res = obj.call_finish(result)
                 logging.info("ArpSpoof started: %s", res)
-                
+
                 # Start proxy after spoof
                 self.proxy.call(
                     "StartProxy",
@@ -134,6 +136,6 @@ class NetSentinelController:
     def stop_mitm(self) -> None:
         if not self.proxy:
             return
-        
+
         self.proxy.call("StopArpSpoof", None, Gio.DBusCallFlags.NONE, -1, None, None)
         self.proxy.call("StopProxy", None, Gio.DBusCallFlags.NONE, -1, None, None)
