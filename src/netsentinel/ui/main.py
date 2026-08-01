@@ -82,39 +82,41 @@ class NetSentinelWindow(Adw.ApplicationWindow):  # type: ignore[misc]
 
         # Initialize D-Bus Controller and Wire Signals
         from netsentinel.ui.controller import NetSentinelController
+
         self.controller = NetSentinelController(self)
 
         # Wire Traffic View Signals
         self.view_traffic.connect(
             "capture-start-requested",
-            lambda _view, interface, bpf: self.controller.start_capture(interface, bpf)
+            lambda _view, interface, bpf: self.controller.start_capture(interface, bpf),
         )
         self.view_traffic.connect(
-            "capture-stop-requested",
-            lambda _view: self.controller.stop_capture()
+            "capture-stop-requested", lambda _view: self.controller.stop_capture()
         )
 
         # Wire Network Map Signals
         self.view_netmap.connect(
-            "arp-scan-requested",
-            lambda _view, interface: self.controller.start_arp_scan(interface)
+            "arp-scan-requested", lambda _view, interface: self.controller.start_arp_scan(interface)
         )
 
         # Wire Interceptor Signals
         self.view_interceptor.connect(
             "proxy-start-requested",
-            lambda _view, port: self.controller.proxy.call(
-                "StartProxy",
-                GLib.Variant("(i)", (port,)),
-                Gio.DBusCallFlags.NONE,
-                -1,
-                None,
-                None
-            ) if self.controller.proxy else None
+            lambda _view, port: (
+                self.controller.proxy.call(
+                    "StartProxy",
+                    GLib.Variant("(i)", (port,)),
+                    Gio.DBusCallFlags.NONE,
+                    -1,
+                    None,
+                    None,
+                )
+                if self.controller.proxy
+                else None
+            ),
         )
         self.view_interceptor.connect(
-            "proxy-stop-requested",
-            lambda _view: self.controller.stop_mitm()
+            "proxy-stop-requested", lambda _view: self.controller.stop_mitm()
         )
 
 
