@@ -16,6 +16,7 @@ class TrafficView(Adw.NavigationPage):  # type: ignore[misc]
         self.is_capturing = False
         self.packets_count = 0
         self.proto_stats = {"DNS": 0, "HTTP": 0, "TLS": 0, "SSH": 0, "Other": 0}
+        self._log_row_count = 0
 
         # Root layout
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
@@ -144,19 +145,15 @@ class TrafficView(Adw.NavigationPage):  # type: ignore[misc]
         elif is_error:
             row.add_css_class("error")
 
-        # Keep list reasonably short (last 50 packets)
-        # To avoid performance degradation on giant logs
         self.list_box.prepend(row)
+        self._log_row_count += 1
 
-        # Check if list exceeds 50
-        children = []
-        child = self.list_box.get_first_child()
-        while child:
-            children.append(child)
-            child = child.get_next_sibling()
-
-        if len(children) > 50:
-            self.list_box.remove(children[-1])
+        # Removing the oldest row directly keeps this hot path constant-time.
+        if self._log_row_count > 50:
+            oldest_row = self.list_box.get_last_child()
+            if oldest_row is not None:
+                self.list_box.remove(oldest_row)
+                self._log_row_count -= 1
 
 
 # Register signals

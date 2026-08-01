@@ -36,7 +36,7 @@ class NetSentinelController:
             GLib.idle_add(self.app.view_traffic.handle_packet_metadata, metadata)
         elif signal_name == "RequestIntercepted":
             metadata = parameters.unpack()[0]
-            GLib.idle_add(self.app.view_interceptor.handle_intercept, metadata)
+            GLib.idle_add(self.app.view_interceptor.handle_request_intercepted, metadata)
 
     def start_capture(self, interface: str, bpf_filter: str) -> None:
         if not self.proxy:
