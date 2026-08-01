@@ -1,0 +1,4 @@
+[D-BUS Service]
+Name=org.netsentinel.Helper1
+Exec=/usr/bin/netsentinel-helperd
+User=netsentinel-helper

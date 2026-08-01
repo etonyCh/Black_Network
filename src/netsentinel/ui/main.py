@@ -33,6 +33,7 @@ class NetSentinelWindow(Adw.ApplicationWindow):  # type: ignore[misc]
         self.ledger = AuditLedger()
         self.session_model = SessionModel()
         self.pqc_validator = PQCValidator()
+        self.active_session_id: str | None = None
 
         # Build UI layout with standard window controls
         toolbar_view = Adw.ToolbarView()
@@ -119,6 +120,16 @@ class NetSentinelWindow(Adw.ApplicationWindow):  # type: ignore[misc]
             "proxy-stop-requested", lambda _view: self.controller.stop_mitm()
         )
 
+        self.view_history.connect(
+            "session-activated", lambda _view, session_id: self._set_active_session(session_id)
+        )
+        self.view_history.connect(
+            "session-deactivated", lambda _view: self._set_active_session(None)
+        )
+
+    def _set_active_session(self, session_id: str | None) -> None:
+        self.active_session_id = session_id
+        logging.info("Active session changed to %s", session_id or "none")
 
 class NetSentinelApp(Adw.Application):  # type: ignore[misc]
     def __init__(self) -> None:
