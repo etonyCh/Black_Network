@@ -34,9 +34,18 @@ class NetSentinelWindow(Adw.ApplicationWindow):  # type: ignore[misc]
         self.session_model = SessionModel()
         self.pqc_validator = PQCValidator()
 
-        # Build UI layout
+        # Build UI layout with standard window controls
+        toolbar_view = Adw.ToolbarView()
+        header_bar = Adw.HeaderBar()
+        toolbar_view.add_top_bar(header_bar)
+
+        # Set title in HeaderBar
+        window_title = Adw.WindowTitle(title="NetSentinel", subtitle="Security Client")
+        header_bar.set_title_widget(window_title)
+
         main_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
-        self.set_content(main_box)
+        toolbar_view.set_content(main_box)
+        self.set_content(toolbar_view)
 
         # Sidebar navigation stack
         self.stack = Gtk.Stack()
@@ -70,6 +79,43 @@ class NetSentinelWindow(Adw.ApplicationWindow):  # type: ignore[misc]
         self.stack.add_titled(self.view_report, "report", "Audit Reports")
         self.stack.add_titled(self.view_history, "history", "Session History")
         self.stack.add_titled(self.view_settings, "settings", "Settings")
+
+        # Initialize D-Bus Controller and Wire Signals
+        from netsentinel.ui.controller import NetSentinelController
+        self.controller = NetSentinelController(self)
+
+        # Wire Traffic View Signals
+        self.view_traffic.connect(
+            "capture-start-requested",
+            lambda _view, interface, bpf: self.controller.start_capture(interface, bpf)
+        )
+        self.view_traffic.connect(
+            "capture-stop-requested",
+            lambda _view: self.controller.stop_capture()
+        )
+
+        # Wire Network Map Signals
+        self.view_netmap.connect(
+            "arp-scan-requested",
+            lambda _view, interface: self.controller.start_arp_scan(interface)
+        )
+
+        # Wire Interceptor Signals
+        self.view_interceptor.connect(
+            "proxy-start-requested",
+            lambda _view, port: self.controller.proxy.call(
+                "StartProxy",
+                GLib.Variant("(i)", (port,)),
+                Gio.DBusCallFlags.NONE,
+                -1,
+                None,
+                None
+            ) if self.controller.proxy else None
+        )
+        self.view_interceptor.connect(
+            "proxy-stop-requested",
+            lambda _view: self.controller.stop_mitm()
+        )
 
 
 class NetSentinelApp(Adw.Application):  # type: ignore[misc]

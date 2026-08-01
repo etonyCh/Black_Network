@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=NetSentinel
+Comment=NetSentinel Security Client and Audit Tool
+Exec=netsentinel
+Icon=network-wired
+Terminal=false
+Type=Application
+Categories=Network;Security;Utility;
+StartupNotify=true
+StartupWMClass=netsentinel

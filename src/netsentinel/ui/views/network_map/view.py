@@ -5,11 +5,15 @@ import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw, Gtk  # noqa: E402
+from gi.repository import Adw, GObject, Gtk  # noqa: E402
 
 
 class NetworkMapView(Adw.NavigationPage):  # type: ignore[misc]
     __gtype_name__ = "NetSentinelNetworkMapView"
+
+    __gsignals__ = {
+        "arp-scan-requested": (GObject.SignalFlags.RUN_FIRST, None, (str,)),
+    }
 
     def __init__(self, **kwargs: object):
         super().__init__(title="Network Map", **kwargs)
@@ -21,6 +25,19 @@ class NetworkMapView(Adw.NavigationPage):  # type: ignore[misc]
         box.set_margin_start(12)
         box.set_margin_end(12)
         self.set_child(box)
+        # Settings Group for Discovery
+        group = Adw.PreferencesGroup(title="Network Discovery")
+        box.append(group)
+
+        self.interface_entry = Adw.EntryRow(title="Network Interface")
+        self.interface_entry.set_text("wlan0")
+        group.add(self.interface_entry)
+
+        self.btn_scan = Gtk.Button(label="Start Discovery Scan")
+        self.btn_scan.add_css_class("suggested-action")
+        self.btn_scan.set_margin_top(12)
+        self.btn_scan.connect("clicked", self._on_start_scan_clicked)
+        box.append(self.btn_scan)
 
         # Drawing area for the map
         self.drawing_area = Gtk.DrawingArea()
@@ -28,6 +45,11 @@ class NetworkMapView(Adw.NavigationPage):  # type: ignore[misc]
         self.drawing_area.set_vexpand(True)
         self.drawing_area.set_draw_func(self._draw_map)
         box.append(self.drawing_area)
+
+    def _on_start_scan_clicked(self, _button: Gtk.Button) -> None:
+        interface = self.interface_entry.get_text().strip()
+        if interface:
+            self.emit("arp-scan-requested", interface)
 
     def set_hosts(self, hosts: list[dict[str, str]]) -> None:
         """
