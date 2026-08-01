@@ -131,6 +131,7 @@ class NetSentinelWindow(Adw.ApplicationWindow):  # type: ignore[misc]
         self.active_session_id = session_id
         logging.info("Active session changed to %s", session_id or "none")
 
+
 class NetSentinelApp(Adw.Application):  # type: ignore[misc]
     def __init__(self) -> None:
         super().__init__(

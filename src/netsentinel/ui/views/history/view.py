@@ -121,7 +121,6 @@ class HistoryView(Adw.NavigationPage):  # type: ignore[misc]
                 self.emit("session-deactivated")
             self.refresh_list()
 
-
     def _show_new_session_dialog(self) -> None:
         # In a real UI we spawn a form. For this skeleton, we assume default
         # values or a simple dialog.
