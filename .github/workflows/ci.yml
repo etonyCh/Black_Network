@@ -294,6 +294,16 @@ jobs:
           DATA_DIR="/usr/share/netsentinel/data"
           LOG_DIR="/var/log"
 
+          # 0) DEFENSE: liste explicite bins produits dans target/release
+          #    Bin names (from Cargo.toml [[bin]]): discoverd, scand, captured, interceptd, netsentinel (GTK4 name NOT netsentinel-gtk)
+          echo "=== target/$TARGET_PROFILE bins available ==="
+          ls -1 "target/$TARGET_PROFILE" | awk 'NF{print "  - " $0}'
+          echo "=== verifying expected 5 bins exist ==="
+          for b in netsentinel-discoverd netsentinel-scand netsentinel-captured netsentinel-interceptd netsentinel; do
+            test -f "target/$TARGET_PROFILE/$b" || { echo "MISSING BIN: target/$TARGET_PROFILE/$b" >&2; exit 2; }
+            echo "  + $b present"
+          done
+
           # Create directory hierarchy
           install -d -m 0755 "$STAGING/DEBIAN"
           install -d -m 0755 "$STAGING/$LIBEXEC"
@@ -309,11 +319,12 @@ jobs:
           install -d -m 0755 "$STAGING/$DATA_DIR"
 
           # 1) Rust executables (CAP_NET_RAW/BPF via setcap dans postinst)
+          #    crates/netsentinel-gtk [[bin]].name = "netsentinel" (package was renamed from netsentinel-gtk)
           install -m 0755 "target/$TARGET_PROFILE/netsentinel-discoverd"  "$STAGING/$LIBEXEC/"
           install -m 0755 "target/$TARGET_PROFILE/netsentinel-scand"      "$STAGING/$LIBEXEC/"
           install -m 0755 "target/$TARGET_PROFILE/netsentinel-captured"   "$STAGING/$LIBEXEC/"
           install -m 0755 "target/$TARGET_PROFILE/netsentinel-interceptd" "$STAGING/$LIBEXEC/"
-          install -m 0755 "target/$TARGET_PROFILE/netsentinel-gtk"        "$STAGING/$INSTALL_ROOT/bin/netsentinel"
+          install -m 0755 "target/$TARGET_PROFILE/netsentinel"            "$STAGING/$INSTALL_ROOT/bin/netsentinel"
 
           # 2) D-Bus system bus policies
           install -m 0644 packaging/dbus-system.d/org.netsentinel.Discover1.conf "$STAGING/$DBUS_CONF/"
