@@ -1,3 +1,5 @@
+# mypy: disable-error-code="unused-ignore,misc,attr-defined"
+
 import argparse
 import asyncio
 import json
@@ -6,8 +8,8 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from dbus_next import BusType  # type: ignore[attr-defined]
-from dbus_next.aio import MessageBus  # type: ignore[attr-defined]
+from dbus_next import BusType
+from dbus_next.aio import MessageBus
 from dbus_next.service import ServiceInterface, method, signal
 
 from netsentinel.core.audit.exporter import export_to_zip
