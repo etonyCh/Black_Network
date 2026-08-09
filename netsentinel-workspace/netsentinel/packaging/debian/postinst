@@ -1,0 +1,95 @@
+#!/bin/bash
+# netsentinel .deb postinst : création comptes système, setcap, activations
+set -e
+
+pkgname=netsentinel
+audit_log=/var/log/netsentinel_audit.jsonl
+
+echo "[netsentinel] postinst — phase $1"
+
+# --------------------------------------------------------------------------
+# 1. Utilisateurs et groupes système dédiés (principe moindre privilège)
+# --------------------------------------------------------------------------
+if [ "$1" = "configure" ]; then
+    for svc_user in netsentinel-discover netsentinel-scan netsentinel-capture netsentinel-intercept; do
+        if ! id "$svc_user" >/dev/null 2>&1; then
+            adduser --quiet --system --no-create-home \
+                    --home /run/$svc_user \
+                    --ingroup nogroup \
+                    --shell /usr/sbin/nologin \
+                    "$svc_user"
+        fi
+    done
+
+    if ! getent group netsentinel >/dev/null 2>&1; then
+        addgroup --quiet --system netsentinel
+    fi
+    for svc_user in netsentinel-discover netsentinel-scan netsentinel-capture netsentinel-intercept; do
+        usermod -a -G netsentinel "$svc_user" 2>/dev/null || true
+    done
+
+    # ----------------------------------------------------------------------
+    # 2. Capabilities POSIX (au lieu de lancer en root intégral)
+    # ----------------------------------------------------------------------
+    if command -v setcap >/dev/null 2>&1; then
+        setcap 'CAP_NET_RAW+eip' /usr/libexec/netsentinel/netsentinel-discoverd  2>/dev/null || true
+        setcap 'CAP_NET_RAW+eip' /usr/libexec/netsentinel/netsentinel-captured    2>/dev/null || true
+        setcap 'CAP_NET_RAW,CAP_NET_ADMIN,CAP_SYS_ADMIN,CAP_BPF,CAP_PERFMON+eip' \
+                    /usr/libexec/netsentinel/netsentinel-captured                2>/dev/null || true
+        setcap 'CAP_NET_RAW,CAP_NET_ADMIN,CAP_SYS_ADMIN+eip' \
+                    /usr/libexec/netsentinel/netsentinel-interceptd              2>/dev/null || true
+    fi
+
+    # ----------------------------------------------------------------------
+    # 3. Journal d'audit immuable (append-only, écriture groupe netsentinel)
+    # ----------------------------------------------------------------------
+    if [ ! -f "$audit_log" ]; then
+        touch "$audit_log"
+    fi
+    chown root:netsentinel "$audit_log" 2>/dev/null || true
+    chmod 0640 "$audit_log"
+    if command -v chattr >/dev/null 2>&1; then
+        chattr +a "$audit_log" 2>/dev/null || true
+    fi
+
+    # ----------------------------------------------------------------------
+    # 4. Compilation schemas GSettings
+    # ----------------------------------------------------------------------
+    if command -v glib-compile-schemas >/dev/null 2>&1; then
+        glib-compile-schemas /usr/share/glib-2.0/schemas 2>/dev/null || true
+    fi
+
+    # ----------------------------------------------------------------------
+    # 5. Rechargement D-Bus (pickup org.netsentinel.*.conf)
+    # ----------------------------------------------------------------------
+    if pgrep dbus-daemon >/dev/null 2>&1; then
+        dbus-send --system --type=method_call --dest=org.freedesktop.DBus \
+                  /org/freedesktop/DBus org.freedesktop.DBus.ReloadConfig \
+                  2>/dev/null || true
+    fi
+
+    # ----------------------------------------------------------------------
+    # 6. Chargement profils AppArmor
+    # ----------------------------------------------------------------------
+    if command -v apparmor_parser >/dev/null 2>&1; then
+        for p in /etc/apparmor.d/usr.libexec.netsentinel-*; do
+            [ -f "$p" ] && apparmor_parser -r "$p" 2>/dev/null || true
+        done
+    fi
+
+    # ----------------------------------------------------------------------
+    # 7. Activation systemd units (D-Bus activation pour scand + interceptd restent on-demand)
+    # ----------------------------------------------------------------------
+    if command -v systemctl >/dev/null 2>&1 && systemctl is-system-running >/dev/null 2>&1; then
+        systemctl daemon-reload 2>/dev/null || true
+        systemctl enable --now netsentinel-discoverd 2>/dev/null || true
+        systemctl enable --now netsentinel-captured  2>/dev/null || true
+        systemctl enable --now netsentinel-scand     2>/dev/null || true
+        # netsentinel-interceptd n'est PAS activé par défaut (principe de moindre surface)
+    fi
+fi
+
+update-desktop-database /usr/share/applications 2>/dev/null || true
+xdg-icon-resource forceupdate 2>/dev/null || true
+
+exit 0

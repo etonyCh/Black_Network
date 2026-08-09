@@ -1,0 +1,32 @@
+#!/bin/bash
+# netsentinel prerm : arrêt élégant + cleanup sécurité (sécurité RE-02 + reARP)
+set -e
+
+echo "[netsentinel] prerm — phase $1"
+
+case "$1" in
+    remove|deconfigure)
+        # Arrêt ordonné démons
+        if command -v systemctl >/dev/null 2>&1; then
+            systemctl stop netsentinel-interceptd 2>/dev/null || true
+            systemctl stop netsentinel-scand        2>/dev/null || true
+            systemctl stop netsentinel-captured     2>/dev/null || true
+            systemctl stop netsentinel-discoverd    2>/dev/null || true
+            systemctl disable netsentinel-discoverd 2>/dev/null || true
+            systemctl disable netsentinel-captured  2>/dev/null || true
+            systemctl disable netsentinel-scand     2>/dev/null || true
+        fi
+
+        # Nettoyage forcé IP forwarding (si MitM crashait avant EndSession)
+        if [ -w /proc/sys/net/ipv4/ip_forward ]; then
+            echo 0 > /proc/sys/net/ipv4/ip_forward 2>/dev/null || true
+        fi
+        # iptables redirect résiduels ? Suppression tables netsentinel
+        if command -v iptables >/dev/null 2>&1; then
+            iptables -t nat -F NETSENTINEL 2>/dev/null || true
+            iptables -t nat -X NETSENTINEL 2>/dev/null || true
+        fi
+        ;;
+esac
+
+exit 0

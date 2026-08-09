@@ -1,0 +1,30 @@
+[package]
+name = "netsentinel-interceptd"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "netsentinel-interceptd"
+path = "src/main.rs"
+
+[dependencies]
+netsentinel-proto = { workspace = true }
+zbus = { workspace = true }
+tokio = { workspace = true, features = ["signal", "process", "net", "macros", "sync", "rt-multi-thread"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow = { workspace = true }
+chrono = { version = "0.4.45", features = ["serde"] }
+serde = { workspace = true, features = ["derive"] }
+ring = "0.17.14"
+serde_json.workspace = true
+hex = "0.4.3"
+
+pnet = "0.35"
+pnet_datalink = "0.35"
+pnet_packet = "0.35"
+pnet_base = "0.35"
+
+[dev-dependencies]
+tempfile = "3.27.0"

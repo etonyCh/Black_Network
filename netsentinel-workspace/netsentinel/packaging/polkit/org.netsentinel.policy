@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC
+ "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<policyconfig>
+
+  <vendor>NetSentinel</vendor>
+
+  <!-- Découverte réseau : impact faible (paquets ARP passifs/actifs sur le
+       LAN local), autorisation silencieuse pour un utilisateur déjà membre
+       du groupe netsentinel-users. -->
+  <action id="org.netsentinel.discover.run">
+    <description>Lancer un scan de découverte réseau (ARP)</description>
+    <message>L'authentification est requise pour découvrir les appareils du réseau</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>yes</allow_active>
+    </defaults>
+  </action>
+
+  <!-- Capture de trafic : impact modéré (visibilité sur tout le trafic
+       passant par l'interface), authentification requise à chaque session. -->
+  <action id="org.netsentinel.capture.run">
+    <description>Démarrer une capture de trafic réseau</description>
+    <message>L'authentification est requise pour capturer le trafic réseau</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+  </action>
+
+  <!-- Audit de vulnérabilités : pas de privilège réseau élevé nécessaire
+       côté OS (voir apparmor profile scand), authentification standard. -->
+  <action id="org.netsentinel.scan.run">
+    <description>Lancer un audit de vulnérabilités sur une cible</description>
+    <message>L'authentification est requise pour lancer un audit de sécurité</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+  </action>
+
+  <!-- Interception (ARP spoofing + proxy) : impact élevé, cette action
+       reste volontairement à `auth_admin` sans exception, y compris pour un
+       administrateur déjà authentifié récemment (pas de mise en cache
+       longue de l'autorisation pour ce module précis). -->
+  <action id="org.netsentinel.intercept.run">
+    <description>Démarrer une session d'interception réseau (ARP spoofing)</description>
+    <message>Cette action redirige le trafic d'un tiers vers cette machine. Une autorisation administrateur explicite est requise à chaque session.</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.imply"></annotate>
+  </action>
+
+</policyconfig>

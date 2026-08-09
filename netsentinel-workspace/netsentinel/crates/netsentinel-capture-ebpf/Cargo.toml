@@ -1,0 +1,18 @@
+[package]
+name = "netsentinel-capture-ebpf"
+version = "0.1.0"
+edition.workspace = true
+
+[dependencies]
+netsentinel-capture-common = { path = "../netsentinel-capture-common" }
+
+aya-ebpf = "0.2.1"
+aya-log-ebpf = "0.2.0"
+network-types = "0.0.6"
+
+[build-dependencies]
+which = "6.0.0"
+
+[[bin]]
+name = "netsentinel-capture-ebpf"
+path = "src/main.rs"

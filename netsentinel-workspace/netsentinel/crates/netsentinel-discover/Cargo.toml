@@ -1,0 +1,23 @@
+[package]
+name = "netsentinel-discoverd"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "netsentinel-discoverd"
+path = "src/main.rs"
+
+[dependencies]
+netsentinel-proto = { workspace = true }
+zbus = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow = { workspace = true }
+futures-util = { workspace = true }
+
+# Construction/envoi de trames ARP brutes et lecture des interfaces réseau.
+# Nécessite CAP_NET_RAW (voir packaging/apparmor + systemd unit).
+pnet = "0.35"
+pnet_datalink = "0.35"

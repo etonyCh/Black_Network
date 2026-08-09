@@ -1,0 +1,41 @@
+# Profil AppArmor — netsentinel-interceptd (Intercept1)
+#
+# Ce profil correspond au squelette actuel (aucune session n'est acceptée,
+# voir crates/netsentinel-intercept/src/main.rs). Il est volontairement
+# écrit avec les capacités minimales qui seraient nécessaires à terme, mais
+# NE DOIT PAS être élargi sans revue de sécurité dédiée au moment où la
+# logique d'interception est réellement implémentée — c'est le service qui
+# manipule le trafic d'un tiers, donc celui qui mérite l'audit le plus
+# poussé du lot.
+
+#include <tunables/global>
+
+/usr/libexec/netsentinel-interceptd {
+  #include <abstractions/base>
+
+  capability net_raw,
+  capability net_admin,
+
+  network inet raw,
+  network packet raw,
+
+  /usr/libexec/netsentinel-interceptd mr,
+
+  # Journal d'audit — écriture seule (pas de suppression/troncature possible
+  # par le service lui-même ; la rotation/purge est gérée hors de son
+  # périmètre de permissions).
+  /var/log/netsentinel/intercept-audit.log a,
+
+  #include <abstractions/dbus-strict>
+  dbus (send, receive) bus=system path=/org/netsentinel/Intercept1
+       interface=org.netsentinel.Intercept1,
+
+  # Polkit exige une action distincte de celle des autres services : voir
+  # packaging/polkit/org.netsentinel.policy — org.netsentinel.intercept.*
+  # doit rester à `auth_admin` (pas `yes`) même pour un utilisateur du
+  # groupe netsentinel.
+
+  deny /home/** rwx,
+  deny /root/** rwx,
+  deny /etc/shadow r,
+}

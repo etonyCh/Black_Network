@@ -1,0 +1,51 @@
+[Unit]
+Description=NetSentinel — service d'interception (Intercept1) [squelette non fonctionnel]
+Documentation=man:netsentinel-interceptd(8)
+After=network.target dbus.service
+Requires=dbus.service
+
+[Service]
+Type=dbus
+BusName=org.netsentinel.Intercept1
+ExecStart=/usr/libexec/netsentinel-interceptd
+Restart=on-failure
+RestartSec=2
+
+# Service désactivé par défaut (voir [Install] plus bas) : à activer
+# explicitement, et seulement après avoir implémenté le flux de consentement
+# + audit décrit dans crates/netsentinel-intercept/src/main.rs.
+User=netsentinel-intercept
+Group=netsentinel
+CapabilityBoundingSet=CAP_NET_RAW CAP_NET_ADMIN
+AmbientCapabilities=CAP_NET_RAW CAP_NET_ADMIN
+NoNewPrivileges=yes
+
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RemoveIPC=yes
+
+# Écriture strictement limitée au journal d'audit — append-only côté
+# AppArmor (voir packaging/apparmor/usr.libexec.netsentinel-interceptd).
+ReadWritePaths=/var/log/netsentinel
+
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_PACKET
+
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources @mount @debug @cpu-emulation @obsolete
+SystemCallErrorNumber=EPERM
+
+[Install]
+# Volontairement absent de WantedBy=multi-user.target : ce service ne
+# démarre pas automatiquement au boot. Activation manuelle explicite
+# (systemctl enable --now) requise, en connaissance de cause.

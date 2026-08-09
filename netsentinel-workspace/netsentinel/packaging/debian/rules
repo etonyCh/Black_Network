@@ -1,0 +1,73 @@
+#!/usr/bin/make -f
+# NetSentinel Debian rules : cargo build workspace et installation hiérarchique
+
+%:
+	dh $@
+
+DESTDIR := $(CURDIR)/debian/tmp
+CARGO_PROFILE := release
+BINARIES := netsentinel-discoverd netsentinel-scand netsentinel-captured netsentinel-interceptd netsentinel-gtk
+
+override_dh_auto_build:
+	cargo build --workspace --profile $(CARGO_PROFILE) --bins --exclude netsentinel-capture-ebpf
+
+override_dh_auto_install:
+	install -d -m 0755 $(DESTDIR)/usr/libexec/netsentinel
+	install -d -m 0755 $(DESTDIR)/usr/bin
+	install -d -m 0755 $(DESTDIR)/usr/share/applications
+	install -d -m 0755 $(DESTDIR)/usr/share/icons/hicolor/scalable/apps
+	install -d -m 0755 $(DESTDIR)/usr/share/dbus-1/system.d
+	install -d -m 0755 $(DESTDIR)/usr/share/glib-2.0/schemas
+	install -d -m 0755 $(DESTDIR)/usr/share/polkit-1/actions
+	install -d -m 0755 $(DESTDIR)/etc/apparmor.d
+	install -d -m 0755 $(DESTDIR)/lib/systemd/system
+	install -d -m 0755 $(DESTDIR)/var/log
+	install -d -m 0755 $(DESTDIR)/usr/share/netsentinel/data
+
+	# Bins Rust back-end (CAP_NET_RAW etc via setcap postinst)
+	install -m 0755 target/$(CARGO_PROFILE)/netsentinel-discoverd  $(DESTDIR)/usr/libexec/netsentinel/
+	install -m 0755 target/$(CARGO_PROFILE)/netsentinel-scand      $(DESTDIR)/usr/libexec/netsentinel/
+	install -m 0755 target/$(CARGO_PROFILE)/netsentinel-captured   $(DESTDIR)/usr/libexec/netsentinel/
+	install -m 0755 target/$(CARGO_PROFILE)/netsentinel-interceptd $(DESTDIR)/usr/libexec/netsentinel/
+	install -m 0755 target/$(CARGO_PROFILE)/netsentinel-gtk        $(DESTDIR)/usr/bin/netsentinel
+
+	# D-Bus system.d configs
+	install -m 0644 packaging/dbus-system.d/org.netsentinel.Discover1.conf $(DESTDIR)/usr/share/dbus-1/system.d/
+	install -m 0644 packaging/dbus-system.d/org.netsentinel.Capture1.conf  $(DESTDIR)/usr/share/dbus-1/system.d/
+	install -m 0644 packaging/dbus-system.d/org.netsentinel.Scan1.conf     $(DESTDIR)/usr/share/dbus-1/system.d/
+	install -m 0644 packaging/dbus-system.d/org.netsentinel.Intercept1.conf $(DESTDIR)/usr/share/dbus-1/system.d/
+
+	# AppArmor
+	install -m 0644 packaging/apparmor/usr.libexec.netsentinel-discoverd  $(DESTDIR)/etc/apparmor.d/
+	install -m 0644 packaging/apparmor/usr.libexec.netsentinel-scand      $(DESTDIR)/etc/apparmor.d/
+	install -m 0644 packaging/apparmor/usr.libexec.netsentinel-captured   $(DESTDIR)/etc/apparmor.d/
+	install -m 0644 packaging/apparmor/usr.libexec.netsentinel-interceptd $(DESTDIR)/etc/apparmor.d/
+
+	# Systemd
+	install -m 0644 packaging/systemd/netsentinel-discoverd.service  $(DESTDIR)/lib/systemd/system/
+	install -m 0644 packaging/systemd/netsentinel-scand.service      $(DESTDIR)/lib/systemd/system/
+	install -m 0644 packaging/systemd/netsentinel-captured.service   $(DESTDIR)/lib/systemd/system/
+	install -m 0644 packaging/systemd/netsentinel-interceptd.service $(DESTDIR)/lib/systemd/system/
+
+	# Polkit
+	if [ -f packaging/polkit/org.netsentinel.policy ]; then \
+	    install -m 0644 packaging/polkit/org.netsentinel.policy $(DESTDIR)/usr/share/polkit-1/actions/ ; \
+	fi
+
+	# Desktop launcher + icone + schemas (si existants dans workspace/data)
+	if [ -f data/netsentinel.desktop ]; then \
+	    install -m 0644 data/netsentinel.desktop $(DESTDIR)/usr/share/applications/org.netsentinel.NetSentinel.desktop ; \
+	fi
+	if [ -f data/netsentinel.svg ]; then \
+	    install -m 0644 data/netsentinel.svg $(DESTDIR)/usr/share/icons/hicolor/scalable/apps/org.netsentinel.NetSentinel.svg ; \
+	fi
+	if [ -f data/org.netsentinel.NetSentinel.gschema.xml ]; then \
+	    install -m 0644 data/org.netsentinel.NetSentinel.gschema.xml $(DESTDIR)/usr/share/glib-2.0/schemas/ ; \
+	fi
+
+override_dh_strip:
+	dh_strip --dbg-package=netsentinel-dbgsym
+
+override_dh_shlibdeps:
+	dh_shlibdeps
+

@@ -1,0 +1,44 @@
+# Profil AppArmor — netsentinel-scand (Scan1)
+# Besoin réel : AUCUNE capacité réseau élevée. nmap tourne ici en mode
+# connect() classique (-sV, pas -sS) et nuclei fait de simples requêtes
+# HTTP(S) applicatives. Ce service n'a jamais besoin de root ni de CAP_NET_RAW.
+
+#include <tunables/global>
+
+/usr/libexec/netsentinel-scand {
+  #include <abstractions/base>
+  #include <abstractions/nameservice>
+
+  network inet stream,
+  network inet6 stream,
+  network inet dgram,
+
+  /usr/libexec/netsentinel-scand mr,
+
+  # Exécution des scanners externes en enfants directs uniquement
+  /usr/bin/nmap Cx,
+  /usr/bin/nuclei Cx,
+
+  /var/lib/netsentinel/scans/ rw,
+  /var/lib/netsentinel/scans/** rw,
+
+  #include <abstractions/dbus-strict>
+  dbus (send, receive) bus=system path=/org/netsentinel/Scan1
+       interface=org.netsentinel.Scan1,
+
+  deny capability net_raw,
+  deny capability sys_admin,
+  deny /home/** rwx,
+  deny /root/** rwx,
+}
+
+# Sous-profil enfant pour nmap : limite ce qu'nmap peut faire même s'il est
+# lui-même compromis (pas de setuid, pas d'accès disque hors /tmp).
+profile /usr/bin/nmap flags=(attach_disconnected) {
+  #include <abstractions/base>
+  network inet stream,
+  network inet6 stream,
+  /usr/bin/nmap mr,
+  /tmp/** rw,
+  deny capability net_raw,
+}

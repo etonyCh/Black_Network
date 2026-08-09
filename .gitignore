@@ -23,4 +23,11 @@ build_deb/
 
 # macOS / System
 .DS_Store
+
+# Rust
+target/
+
+# IDE
+.idea/
+.vscode/
 EOF

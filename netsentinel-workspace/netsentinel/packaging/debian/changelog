@@ -1,0 +1,14 @@
+netsentinel (0.1.0) UNRELEASED; urgency=medium
+
+  * Initial release of NetSentinel hybrid GTK4 + Rust workspace.
+  * Phase 1 — Capture eBPF XDP via Aya, décode Ethernet/IPv4/TCP/UDP.
+  * Phase 1 — Démon discoverd : scan ARP natif pnet (pas de shell-out).
+  * Phase 1 — Démon scand : orchestration nmap + nuclei (CAP_BYPASS via AppArmor child profile).
+  * Phase 2 — UI GTK4 Libadwaita : 4 vues, buffer circulaire 1000 paquets, coloration
+    sémantique rouge pour trafic non chiffré (80/23/21/53).
+  * Phase 3 — MitM : ip_forward, résolution ARP, boucle d'empoisonnement bi-directionnelle,
+    Timeout 30 min (RE-02), reARP en fin de session, journal HMAC-SHA256.
+  * Phase 4 — AppArmor 4 profils, 4 units systemd D-Bus activation, setcap,
+    package debian via `dpkg-buildpackage -us -uc`.
+
+ -- NetSentinel Team <security@netsentinel.invalid>  Sun, 09 Aug 2026 12:00:00 +0000

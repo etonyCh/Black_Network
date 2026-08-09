@@ -1,0 +1,36 @@
+# Profil AppArmor — netsentinel-discoverd (Discover1)
+# Besoin réel : ouvrir un socket datalink (CAP_NET_RAW) pour émettre/recevoir
+# des trames ARP. Aucun accès disque en écriture, aucun exec externe.
+
+#include <tunables/global>
+
+/usr/libexec/netsentinel-discoverd {
+  #include <abstractions/base>
+  #include <abstractions/nameservice>
+
+  capability net_raw,
+
+  network inet raw,
+  network inet dgram,
+  network packet raw,
+
+  # Binaire lui-même
+  /usr/libexec/netsentinel-discoverd mr,
+
+  # Lecture seule de la conf réseau système
+  /etc/resolv.conf r,
+  /sys/class/net/** r,
+
+  # D-Bus système
+  #include <abstractions/dbus-strict>
+  dbus (send, receive) bus=system path=/org/netsentinel/Discover1
+       interface=org.netsentinel.Discover1,
+  dbus (send) bus=system path=/org/freedesktop/DBus
+       interface=org.freedesktop.DBus member=RequestName,
+
+  # Tout le reste est refusé par défaut (deny implicite en fin de profil AppArmor)
+  deny /home/** rwx,
+  deny /root/** rwx,
+  deny /etc/shadow r,
+  deny /etc/passwd w,
+}

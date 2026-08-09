@@ -1,0 +1,29 @@
+[package]
+name = "netsentinel-captured"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "netsentinel-captured"
+path = "src/main.rs"
+
+[dependencies]
+netsentinel-proto = { workspace = true }
+zbus = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow = { workspace = true }
+
+aya = "0.14.0"
+aya-log = "0.3.0"
+netsentinel-capture-common = { path = "../netsentinel-capture-common" }
+clap = { version = "4.5.20", features = ["std"] }
+libc = "0.2.159"
+bytes = "1.5"
+
+[build-dependencies]
+anyhow = "1"
+aya-build = "0.2.0"
+cargo_metadata = "0.23.0"

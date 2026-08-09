@@ -1,0 +1,38 @@
+# Profil AppArmor — netsentinel-captured (Capture1)
+# Besoin réel : charger/attacher un programme eBPF (CAP_BPF, CAP_NET_ADMIN,
+# CAP_PERFMON sur noyaux récents) et écrire les exports .pcap dans un
+# répertoire dédié.
+
+#include <tunables/global>
+
+/usr/libexec/netsentinel-captured {
+  #include <abstractions/base>
+
+  capability bpf,
+  capability net_admin,
+  capability perfmon,
+  capability sys_resource,   # verrouillage mémoire pour les maps eBPF (RLIMIT_MEMLOCK)
+
+  network inet raw,
+  network packet raw,
+
+  /usr/libexec/netsentinel-captured mr,
+
+  # Programme eBPF embarqué (chargé au démarrage)
+  /usr/libexec/netsentinel/*.o r,
+
+  # Point de montage bpffs (pinning des maps)
+  /sys/fs/bpf/netsentinel/** rw,
+  /sys/kernel/debug/tracing/** r,
+
+  # Exports pcap — répertoire dédié uniquement, jamais $HOME
+  /var/lib/netsentinel/captures/ rw,
+  /var/lib/netsentinel/captures/** rw,
+
+  #include <abstractions/dbus-strict>
+  dbus (send, receive) bus=system path=/org/netsentinel/Capture1
+       interface=org.netsentinel.Capture1,
+
+  deny /home/** rwx,
+  deny /root/** rwx,
+}
