@@ -455,8 +455,52 @@ jobs:
           pip install -e ".[dev]"
           curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
 
-      - name: Generate CycloneDX SBOM (Python)
-        run: syft packages python:${{ github.workspace }} -o cyclonedx-json=netsentinel-sbom.cdx.json
+      - name: Generate CycloneDX SBOM (Python + Rust monorepo)
+        run: |
+          # ------------------------------------------------------------------
+          # DIAGNOSTIC LOGS (verify syft env before scanning)
+          # ------------------------------------------------------------------
+          echo "=== syft version ==="
+          syft version
+          echo "=== PWD ==="
+          pwd
+          echo "=== workspace root files (need pyproject.toml for Python + Cargo for Rust) ==="
+          ls -la "${{ github.workspace }}"
+          echo "=== Rust workspace exists? ==="
+          ls -la "${{ github.workspace }}/netsentinel-workspace/netsentinel/" 2>/dev/null || echo "  not found"
+
+          # Modern Syft: `syft scan` replaces deprecated `syft packages`
+          # Source `dir:` scheme (not legacy `python:`) = Syft auto-detects
+          # Python deps via pyproject.toml/requirements AND Rust crates via
+          # Cargo.lock/Cargo.toml in subdirectories (hybrid monorepo).
+          syft scan \
+            --output cyclonedx-json=netsentinel-sbom.cdx.json \
+            dir:${{ github.workspace }}
+
+          # ------------------------------------------------------------------
+          # POST-DIAGNOSTIC (confirm SBOM was actually written)
+          # ------------------------------------------------------------------
+          echo "=== SBOM generated ==="
+          ls -la netsentinel-sbom.cdx.json
+          echo "=== first 30 lines of SBOM (sanity check valid JSON header) ==="
+          head -30 netsentinel-sbom.cdx.json
+          echo "=== number of packages listed in SBOM ==="
+          cat > /tmp/check_sbom.py <<'PYEOF'
+          import json, sys
+          try:
+              with open('netsentinel-sbom.cdx.json') as f:
+                  d = json.load(f)
+              comps = d.get('components', [])
+              names = [c.get('name','?') for c in comps[:15]]
+              print(f'TOTAL packages in CycloneDX: {len(comps)}')
+              print('First 15 packages:')
+              for n in names:
+                  print(f'  - {n}')
+          except Exception as e:
+              print(f'WARN: could not parse SBOM JSON: {e}', file=sys.stderr)
+              sys.exit(0)
+          PYEOF
+          python3 /tmp/check_sbom.py
 
       - name: Upload SBOM artifact
         uses: actions/upload-artifact@v4
