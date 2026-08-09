@@ -370,12 +370,43 @@ jobs:
             install -m 0644 "${ROOT_DATA}/vuln_database.json" "$STAGING/$DATA_DIR/"
           fi
 
-          # 7) DEBIAN/control, postinst, prerm, changelog, compat (dep packaging/debian)
-          install -m 0755 packaging/debian/postinst "$STAGING/DEBIAN/postinst"
-          install -m 0755 packaging/debian/prerm    "$STAGING/DEBIAN/prerm"
-          install -m 0644 packaging/debian/control  "$STAGING/DEBIAN/control"
-          install -m 0644 packaging/debian/changelog "$STAGING/DEBIAN/changelog"
-          install -m 0644 packaging/debian/compat   "$STAGING/DEBIAN/compat" 2>/dev/null || true
+          # 7) DEBIAN/binary package control files + scripts
+          #    CRITICAL dpkg-deb rule: $STAGING/DEBIAN/control MUST START with
+          #    "Package:" on line 1 (BINARY format). packaging/debian/control on
+          #    disk is a SOURCE control file (starts with Source:) -> INVALID.
+          #    We write the binary control with echo statements (no heredoc
+          #    terminator indentation issues that break YAML parsing).
+          if [ -f packaging/debian/postinst ]; then install -m 0755 packaging/debian/postinst "$STAGING/DEBIAN/postinst"; fi
+          if [ -f packaging/debian/prerm    ]; then install -m 0755 packaging/debian/prerm    "$STAGING/DEBIAN/prerm";    fi
+
+          CONTROL_FILE="$STAGING/DEBIAN/control"
+          : > "$CONTROL_FILE"
+          echo "Package: netsentinel"                                   >> "$CONTROL_FILE"
+          echo "Version: 0.1.0"                                         >> "$CONTROL_FILE"
+          echo "Section: utils"                                         >> "$CONTROL_FILE"
+          echo "Priority: optional"                                     >> "$CONTROL_FILE"
+          echo "Architecture: ${ARCH}"                                  >> "$CONTROL_FILE"
+          echo "Maintainer: NetSentinel Team <security@netsentinel.invalid>" >> "$CONTROL_FILE"
+          echo "Homepage: https://netsentinel.invalid"                  >> "$CONTROL_FILE"
+          echo "Depends: libgtk-4-1, libadwaita-1-0, libglib2.0-0, libpango-1.0-0, libcairo2, libgdk-pixbuf-2.0-0, libssl3, dbus-system-bus, polkitd, apparmor, systemd, libcap2-bin" >> "$CONTROL_FILE"
+          echo "Recommends: nmap, arp-scan, tshark, wireshark-common"   >> "$CONTROL_FILE"
+          echo "Description: GNOME GTK4 network audit + eBPF interception for Linux" >> "$CONTROL_FILE"
+          echo " NetSentinel is a monolithic Linux security tool for GNOME (GTK4 +" >> "$CONTROL_FILE"
+          echo " Libadwaita) targeting Debian and Ubuntu. It combines the following" >> "$CONTROL_FILE"
+          echo " ."                                                      >> "$CONTROL_FILE"
+          echo "  - ultra-fast eBPF XDP capture via Aya interface (kernel 5.10+)" >> "$CONTROL_FILE"
+          echo "  - native ARP scanning (CAP_NET_RAW only, no full root)" >> "$CONTROL_FILE"
+          echo "  - vulnerability audit via nmap plus tshark"           >> "$CONTROL_FILE"
+          echo "  - ARP man-in-the-middle interception with automatic re-ARP (30 min)" >> "$CONTROL_FILE"
+          echo " ."                                                      >> "$CONTROL_FILE"
+          echo " Privileged components (4 daemons) are isolated via AppArmor, executed" >> "$CONTROL_FILE"
+          echo " with the minimum POSIX capabilities required, and managed by systemd" >> "$CONTROL_FILE"
+          echo " Type=dbus with on-demand activation."                  >> "$CONTROL_FILE"
+          chmod 0644 "$CONTROL_FILE"
+          echo "=== GENERATED DEBIAN/control (first 15 lines) ==="
+          head -15 "$CONTROL_FILE"
+          echo "=== DEBIAN/ dir listing ==="
+          ls -la "$STAGING/DEBIAN/"
 
           # 8) dpkg-shlibdeps auto shlibs Depends (GTK4 etc)
           dpkg-shlibdeps -O \
@@ -392,7 +423,9 @@ jobs:
           echo "DEB_PATH=$DEB_FILENAME" >> "$GITHUB_ENV"
           ls -la "$DEB_FILENAME"
           dpkg-deb -I "$DEB_FILENAME"
-          dpkg-deb -c "$DEB_FILENAME" | head -40
+          dpkg-deb -c "$DEB_FILENAME" > /tmp/netsentinel-deb-contents.txt 2>/dev/null || true
+          echo "=== .deb contents (first 40 entries) ==="
+          head -40 /tmp/netsentinel-deb-contents.txt
 
       - id: upload-deb
         name: Upload .deb artifact
