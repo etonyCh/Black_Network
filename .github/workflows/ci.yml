@@ -254,12 +254,20 @@ jobs:
           curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
           export PATH="$HOME/.cargo/bin:$PATH"
-          rustup toolchain install nightly-x86_64-unknown-linux-gnu --profile minimal --component rust-src
+          rustup toolchain install nightly-x86_64-unknown-linux-gnu --profile minimal --component rust-src,llvm-tools-preview
           rustup default stable
           rustc --version
           cargo --version
           echo "nightly installed (required for aya-build netsentinel-captured build.rs rustc_version_meta):"
           rustup run nightly rustc --version 2>&1 || true
+          rustup component list --toolchain nightly | grep llvm-tools-preview || true
+
+      - name: Install bpf-linker (netsentinel-capture-ebpf build.rs L15 which("bpf-linker").unwrap())
+        run: |
+          export PATH="$HOME/.cargo/bin:$PATH"
+          cargo install bpf-linker --locked --no-track
+          echo "bpf-linker installed at: $(which bpf-linker)"
+          bpf-linker --version
 
       - name: Cargo build — workspace release bins (5 exécutables Rust)
         working-directory: netsentinel-workspace/netsentinel
