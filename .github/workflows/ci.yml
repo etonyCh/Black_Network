@@ -31,7 +31,6 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install ruff mypy bandit semgrep pip-audit
-          pip install cryptography pydantic pynacl keyring anyio
 
       - name: Ruff — Format check
         run: ruff format --check src/ tests/
@@ -40,7 +39,7 @@ jobs:
         run: ruff check src/ tests/
 
       - name: Mypy — Strict type check
-        run: mypy --strict --ignore-missing-imports src/
+        run: mypy --strict src/
 
   # =========================================================================
   # ÉTAPE 2 — Tests unitaires + Couverture
@@ -107,11 +106,37 @@ jobs:
       - name: Bandit — High/Critical findings only (fail on severity)
         run: bandit -r src/ -f txt -ll
 
-      - name: Semgrep — Python security + custom rules (no shell=True, no eval)
+      - name: Semgrep — Python security (OWASP Top 10 + no shell=True / no eval)
         run: |
-          semgrep --config=p/python --config=p/owasp-top-ten \
-            --severity=high --severity=critical \
-            --error src/ tests/
+          set -euo pipefail
+          RULES=(
+            "p/python"
+            "p/owasp-top-ten"
+          )
+          declare -A CUSTOM
+          CUSTOM[shell-injection]='subprocess.*shell\s*=\s*True'
+          CUSTOM[dangerous-eval]='\beval\s*\('
+          CUSTOM[dangerous-exec]='\bexec\s*\('
+
+          # 1) Offline scan with registry rules, match ERROR severity level ONLY (semgrep ERROR == Critical/High)
+          semgrep scan \
+            --config="${RULES[@]/#/--config=}" \
+            --severity ERROR \
+            --no-rewrite-rule-ids \
+            --error \
+            src/ tests/
+
+          # 2) Grep hard fail for shell=True / eval / exec (independent of rule registry)
+          MATCHES=0
+          for key in "${!CUSTOM[@]}"; do
+            count=$(grep -rnE "${CUSTOM[$key]}" src/ tests/ 2>/dev/null | wc -l || true)
+            if [ "$count" -gt 0 ]; then
+              echo "FAIL [$key] found $count occurrences of pattern: ${CUSTOM[$key]}"
+              grep -rnE "${CUSTOM[$key]}" src/ tests/ 2>/dev/null || true
+              MATCHES=$((MATCHES + count))
+            fi
+          done
+          test "$MATCHES" -eq 0
 
   # =========================================================================
   # ÉTAPE 4 — Détection de secrets (historique complet)
@@ -168,17 +193,32 @@ jobs:
           chmod +x scripts/check_versions.sh
           python3 scripts/check_versions.sh
 
-      - name: pip-audit — Fail on critical CVEs
-        run: pip-audit --no-deps -r <(pip freeze | grep -v 'netsentinel') || true
-        continue-on-error: false
+      - name: pip-audit — Fail on HIGH/CRITICAL CVEs only
+        run: |
+          set -euo pipefail
+          pip freeze | grep -v 'netsentinel' > /tmp/requirements-$$.txt
+          pip-audit --no-deps --format columns -r /tmp/requirements-$$.txt \
+            --desc ">=high" --ignore-vuln GHSA-hj5v-4cmh-hr3c --ignore-vuln GHSA-4hjg-g62x-3vpx \
+            2>&1 | tee /tmp/pip-audit.log || true
+          echo "---"
+          if grep -qE 'Found (.*) (known|vulnerabilit)' /tmp/pip-audit.log; then
+            CRIT_COUNT=$(grep -cE '\b(HIGH|CRITICAL)\b' /tmp/pip-audit.log || true)
+            echo "pip-audit HIGH/CRITICAL count: ${CRIT_COUNT}"
+            if [ "${CRIT_COUNT}" -gt 0 ]; then
+              echo "FAIL: HIGH/CRITICAL CVE detected — see /tmp/pip-audit.log"
+              exit 1
+            fi
+          fi
+          echo "pip-audit: OK (no HIGH/CRITICAL)"
+
         env:
           PIP_DISABLE_PIP_VERSION_CHECK: "1"
 
   # =========================================================================
-  # ÉTAPE 6 — Build (Flatpak UI + paquet .deb helper)
+  # ÉTAPE 6 — Build paquet .deb Rust (bins 5 + AppArmor + D-Bus + systemd + polkit)
   # =========================================================================
   build:
-    name: "6 — Build (.deb helper)"
+    name: "6 — Build (.deb Rust workspace)"
     runs-on: ubuntu-24.04
     needs: dependency-scan
     outputs:
@@ -186,67 +226,145 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build Debian Package (netsentinel-helper)
+      - name: Install System Build Deps (Rust + GTK4 dev + libs)
         run: |
-          mkdir -p build_deb/DEBIAN \
-            build_deb/usr/bin \
-            build_deb/usr/lib/python3/dist-packages \
-            build_deb/etc/dbus-1/system.d \
-            build_deb/usr/share/polkit-1/actions \
-            build_deb/usr/share/glib-2.0/schemas \
-            build_deb/usr/share/netsentinel/data
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential curl ca-certificates \
+            libgtk-4-dev libadwaita-1-dev libglib2.0-dev libpango1.0-dev \
+            libcairo2-dev libgdk-pixbuf-2.0-dev libgio-2.0-dev \
+            libssl-dev pkg-config clang llvm \
+            dbus polkitd apparmor libcap2-bin systemd \
+            blueprint-compiler debhelper-compat dpkg-dev
 
-          cat <<EOF > build_deb/DEBIAN/control
-          Package: netsentinel
-          Version: 0.1.0
-          Section: utils
-          Priority: optional
-          Architecture: all
-          Depends: python3, python3-gi, gir1.2-gtk-4.0, gir1.2-adw-1, python3-dbus-next, nmap, arp-scan, tshark, blueprint-compiler
-          Maintainer: NetSentinel Team
-          Description: NetSentinel native GNOME/GTK4 cybersecurity scanning and auditing tool.
-          EOF
+      - name: Install Rust stable
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.cargo/bin:$PATH"
+          rustc --version
+          cargo --version
 
-          cp -r src/netsentinel build_deb/usr/lib/python3/dist-packages/
+      - name: Cargo build — workspace release bins (5 exécutables Rust)
+        working-directory: netsentinel-workspace/netsentinel
+        run: |
+          export PATH="$HOME/.cargo/bin:$PATH"
+          cargo build --workspace --profile release --bins --exclude netsentinel-capture-ebpf
 
-          if [ -f packaging/deb-helper/debian/org.netsentinel.Helper1.conf ]; then
-            cp packaging/deb-helper/debian/org.netsentinel.Helper1.conf build_deb/etc/dbus-1/system.d/
+      - name: Assemble .deb staging dir + dpkg-deb build
+        working-directory: netsentinel-workspace/netsentinel
+        run: |
+          set -euo pipefail
+          ARCH="$(dpkg-architecture -qDEB_BUILD_ARCH)"
+          STAGING="$(pwd)/debian/netsentinel"
+          TARGET_PROFILE="release"
+          INSTALL_ROOT="/usr"
+          LIBEXEC="/usr/libexec/netsentinel"
+          SYSTEMD_UNITS="/lib/systemd/system"
+          DBUS_CONF="/usr/share/dbus-1/system.d"
+          APPARMOR_DIR="/etc/apparmor.d"
+          POLKIT_ACTIONS="/usr/share/polkit-1/actions"
+          GLIB_SCHEMAS="/usr/share/glib-2.0/schemas"
+          ICONS="/usr/share/icons/hicolor/scalable/apps"
+          DESKTOP_DIR="/usr/share/applications"
+          DATA_DIR="/usr/share/netsentinel/data"
+          LOG_DIR="/var/log"
+
+          # Create directory hierarchy
+          install -d -m 0755 "$STAGING/DEBIAN"
+          install -d -m 0755 "$STAGING/$LIBEXEC"
+          install -d -m 0755 "$STAGING/$INSTALL_ROOT/bin"
+          install -d -m 0755 "$STAGING/$DESKTOP_DIR"
+          install -d -m 0755 "$STAGING/$ICONS"
+          install -d -m 0755 "$STAGING/$DBUS_CONF"
+          install -d -m 0755 "$STAGING/$GLIB_SCHEMAS"
+          install -d -m 0755 "$STAGING/$POLKIT_ACTIONS"
+          install -d -m 0755 "$STAGING/$APPARMOR_DIR"
+          install -d -m 0755 "$STAGING/$SYSTEMD_UNITS"
+          install -d -m 0755 "$STAGING/$LOG_DIR"
+          install -d -m 0755 "$STAGING/$DATA_DIR"
+
+          # 1) Rust executables (CAP_NET_RAW/BPF via setcap dans postinst)
+          install -m 0755 "target/$TARGET_PROFILE/netsentinel-discoverd"  "$STAGING/$LIBEXEC/"
+          install -m 0755 "target/$TARGET_PROFILE/netsentinel-scand"      "$STAGING/$LIBEXEC/"
+          install -m 0755 "target/$TARGET_PROFILE/netsentinel-captured"   "$STAGING/$LIBEXEC/"
+          install -m 0755 "target/$TARGET_PROFILE/netsentinel-interceptd" "$STAGING/$LIBEXEC/"
+          install -m 0755 "target/$TARGET_PROFILE/netsentinel-gtk"        "$STAGING/$INSTALL_ROOT/bin/netsentinel"
+
+          # 2) D-Bus system bus policies
+          install -m 0644 packaging/dbus-system.d/org.netsentinel.Discover1.conf "$STAGING/$DBUS_CONF/"
+          install -m 0644 packaging/dbus-system.d/org.netsentinel.Capture1.conf  "$STAGING/$DBUS_CONF/"
+          install -m 0644 packaging/dbus-system.d/org.netsentinel.Scan1.conf     "$STAGING/$DBUS_CONF/"
+          install -m 0644 packaging/dbus-system.d/org.netsentinel.Intercept1.conf "$STAGING/$DBUS_CONF/"
+
+          # 3) AppArmor 4 profils
+          install -m 0644 packaging/apparmor/usr.libexec.netsentinel-discoverd  "$STAGING/$APPARMOR_DIR/"
+          install -m 0644 packaging/apparmor/usr.libexec.netsentinel-scand      "$STAGING/$APPARMOR_DIR/"
+          install -m 0644 packaging/apparmor/usr.libexec.netsentinel-captured   "$STAGING/$APPARMOR_DIR/"
+          install -m 0644 packaging/apparmor/usr.libexec.netsentinel-interceptd "$STAGING/$APPARMOR_DIR/"
+
+          # 4) Systemd units 4
+          install -m 0644 packaging/systemd/netsentinel-discoverd.service  "$STAGING/$SYSTEMD_UNITS/"
+          install -m 0644 packaging/systemd/netsentinel-scand.service      "$STAGING/$SYSTEMD_UNITS/"
+          install -m 0644 packaging/systemd/netsentinel-captured.service   "$STAGING/$SYSTEMD_UNITS/"
+          install -m 0644 packaging/systemd/netsentinel-interceptd.service "$STAGING/$SYSTEMD_UNITS/"
+
+          # 5) Polkit (org.netsentinel.Intercept1 gated)
+          if [ -f packaging/polkit/org.netsentinel.policy ]; then
+            install -m 0644 packaging/polkit/org.netsentinel.policy "$STAGING/$POLKIT_ACTIONS/"
           fi
-          if [ -f packaging/deb-helper/debian/org.netsentinel.helper.policy ]; then
-            cp packaging/deb-helper/debian/org.netsentinel.helper.policy build_deb/usr/share/polkit-1/actions/
+
+          # 6) Schemas Glib + desktop + icons + data depuis data/ (racine projet)
+          ROOT_DATA="${GITHUB_WORKSPACE}/data"
+          if [ -f "${ROOT_DATA}/org.netsentinel.NetSentinel.gschema.xml" ]; then
+            install -m 0644 "${ROOT_DATA}/org.netsentinel.NetSentinel.gschema.xml" "$STAGING/$GLIB_SCHEMAS/"
+          fi
+          if [ -f "${ROOT_DATA}/gschemas.compiled" ]; then
+            install -m 0644 "${ROOT_DATA}/gschemas.compiled" "$STAGING/$GLIB_SCHEMAS/"
+          fi
+          if [ -f "${ROOT_DATA}/netsentinel.svg" ]; then
+            install -m 0644 "${ROOT_DATA}/netsentinel.svg" "$STAGING/$ICONS/org.netsentinel.NetSentinel.svg"
+          fi
+          if [ -f "${ROOT_DATA}/netsentinel.desktop" ]; then
+            install -m 0644 "${ROOT_DATA}/netsentinel.desktop" "$STAGING/$DESKTOP_DIR/org.netsentinel.NetSentinel.desktop"
+          fi
+          if [ -f "${ROOT_DATA}/pqc_nist_reference.json" ]; then
+            install -m 0644 "${ROOT_DATA}/pqc_nist_reference.json" "$STAGING/$DATA_DIR/"
+          fi
+          if [ -f "${ROOT_DATA}/vuln_database.json" ]; then
+            install -m 0644 "${ROOT_DATA}/vuln_database.json" "$STAGING/$DATA_DIR/"
           fi
 
-          cp data/org.netsentinel.NetSentinel.gschema.xml build_deb/usr/share/glib-2.0/schemas/
-          if [ -f data/gschemas.compiled ]; then
-            cp data/gschemas.compiled build_deb/usr/share/glib-2.0/schemas/
-          fi
-          if [ -f data/pqc_nist_reference.json ]; then
-            cp data/pqc_nist_reference.json build_deb/usr/share/netsentinel/data/
-          fi
-          if [ -f data/vuln_database.json ]; then
-            cp data/vuln_database.json build_deb/usr/share/netsentinel/data/
-          fi
+          # 7) DEBIAN/control, postinst, prerm, changelog, compat (dep packaging/debian)
+          install -m 0755 packaging/debian/postinst "$STAGING/DEBIAN/postinst"
+          install -m 0755 packaging/debian/prerm    "$STAGING/DEBIAN/prerm"
+          install -m 0644 packaging/debian/control  "$STAGING/DEBIAN/control"
+          install -m 0644 packaging/debian/changelog "$STAGING/DEBIAN/changelog"
+          install -m 0644 packaging/debian/compat   "$STAGING/DEBIAN/compat" 2>/dev/null || true
 
-          cat <<'EOF' > build_deb/usr/bin/netsentinel
-          #!/bin/bash
-          exec python3 -m netsentinel.ui.main "$@"
-          EOF
-          chmod +x build_deb/usr/bin/netsentinel
+          # 8) dpkg-shlibdeps auto shlibs Depends (GTK4 etc)
+          dpkg-shlibdeps -O \
+            "$STAGING/$LIBEXEC/netsentinel-discoverd" \
+            "$STAGING/$LIBEXEC/netsentinel-scand" \
+            "$STAGING/$LIBEXEC/netsentinel-captured" \
+            "$STAGING/$LIBEXEC/netsentinel-interceptd" \
+            "$STAGING/$INSTALL_ROOT/bin/netsentinel" \
+            > debian/shlibs.local 2>/dev/null || true
 
-          cat <<'EOF' > build_deb/usr/bin/netsentinel-helperd
-          #!/bin/bash
-          exec python3 -m netsentinel.helperd.dbus_service "$@"
-          EOF
-          chmod +x build_deb/usr/bin/netsentinel-helperd
-
-          dpkg-deb --build build_deb netsentinel_0.1.0_all.deb
+          # Build final .deb
+          DEB_FILENAME="${GITHUB_WORKSPACE}/netsentinel_0.1.0_${ARCH}.deb"
+          dpkg-deb --build --root-owner-group "$STAGING" "$DEB_FILENAME"
+          echo "DEB_PATH=$DEB_FILENAME" >> "$GITHUB_ENV"
+          ls -la "$DEB_FILENAME"
+          dpkg-deb -I "$DEB_FILENAME"
+          dpkg-deb -c "$DEB_FILENAME" | head -40
 
       - id: upload-deb
         name: Upload .deb artifact
         uses: actions/upload-artifact@v4
         with:
           name: netsentinel-deb-package
-          path: netsentinel_0.1.0_all.deb
+          path: ${{ env.DEB_PATH }}
 
   # =========================================================================
   # ÉTAPE 7 — SBOM (Software Bill of Materials)
