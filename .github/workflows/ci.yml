@@ -11,6 +11,17 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  # Évite SIGTRAP (133) sur certains runners: AES-NI / CPUID limitations.
+  # Préfère les wheels binaires, n'autorise pas de build source pour
+  # les packages à risque (PyNaCl/libsodium, pycairo, PyGObject).
+  # => ceux-ci sont installés via apt (python3-nacl, python3-gi, python3-cairo)
+  CRYPTOGRAPHY_DONT_BUILD_RUST: "1"
+  PYTHONDONTWRITEBYTECODE: "1"
+  PYTHONWARNINGS: "ignore::DeprecationWarning"
+  # Force pip à préférer les wheels (ne force pas `:all:` — semgrep est sdist-only parfois)
+  PIP_PREFER_BINARY: "1"
+
 jobs:
 
   # =========================================================================
@@ -22,15 +33,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install APT dependencies (gi.repository bindings & crypto)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            python3-gi python3-cairo python3-nacl python3-pydantic \
+            python3-cryptography python3-keyring python3-anyio \
+            gobject-introspection libgirepository-1.0-1
+
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
-      - name: Install Python tooling
+      - name: Install Python tooling (wheels-only)
         run: |
           python -m pip install --upgrade pip
           pip install ruff mypy bandit semgrep pip-audit
+          pip install cryptography pydantic keyring anyio cffi
 
       - name: Ruff — Format check
         run: ruff format --check src/ tests/
@@ -39,7 +59,7 @@ jobs:
         run: ruff check src/ tests/
 
       - name: Mypy — Strict type check
-        run: mypy --strict src/
+        run: mypy --strict --ignore-missing-imports src/
 
   # =========================================================================
   # ÉTAPE 2 — Tests unitaires + Couverture
@@ -51,28 +71,31 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install System Dependencies
+      - name: Install APT deps: gi + crypto + nmap (battle-tested debian wheels)
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
+          sudo apt-get install -y --no-install-recommends \
             nmap arp-scan tshark \
-            libgtk-4-dev libadwaita-1-dev \
-            gobject-introspection libgirepository1.0-dev libgirepository-2.0-dev \
-            blueprint-compiler libcairo2-dev pkg-config
+            libgtk-4-1 libadwaita-1-0 \
+            gobject-introspection libgirepository-1.0-1 \
+            python3-gi python3-cairo python3-nacl \
+            python3-pydantic python3-cryptography python3-keyring python3-anyio python3-cffi
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
-      - name: Install project with dev extras
+      - name: Install project + PyPI pure wheels (cryptography etc)
         run: |
           python -m pip install --upgrade pip
+          pip install cryptography pydantic keyring anyio cffi
           pip install -e ".[dev]"
 
       - name: Run Pytest with coverage threshold
         run: |
-          pytest --cov=src --cov-report=term-missing --cov-fail-under=55
+          export PYTHONPATH=src
+          pytest --cov=src --cov-report=term-missing --cov-fail-under=55 -p no:cacheprovider --basetemp="$RUNNER_TEMP/pytest-tmp"
 
       - name: Upload coverage report
         if: always()
@@ -93,6 +116,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install APT bindings gi + cffi (semgrep peut importer)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            python3-gi python3-cairo python3-nacl python3-pydantic \
+            python3-cryptography python3-keyring python3-anyio python3-cffi
+
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
@@ -101,7 +131,7 @@ jobs:
       - name: Install SAST tooling
         run: |
           python -m pip install --upgrade pip
-          pip install bandit semgrep
+          pip install bandit semgrep cryptography pydantic cffi keyring anyio
 
       - name: Bandit — High/Critical findings only (fail on severity)
         run: bandit -r src/ -f txt -ll

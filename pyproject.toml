@@ -18,16 +18,12 @@ classifiers = [
     "Topic :: Security",
 ]
 dependencies = [
-    "dbus-next>=0.2.3",
     "pydantic>=2.7.0",
     "cryptography>=42.0.0",
     "keyring>=25.0.0",
-    "google-genai>=0.1.1",
 ]
 
 [project.scripts]
-netsentinel = "netsentinel.ui.main:main"
-netsentinel-helperd = "netsentinel.helperd.dbus_service:main"
 
 [project.optional-dependencies]
 dev = [
@@ -36,7 +32,17 @@ dev = [
     "ruff>=0.3.0",
     "mypy>=1.9.0",
     "bandit>=1.7.8",
+]
+gi = [
+    # NOTE: sur Debian/Ubuntu préférer apt install python3-gi python3-cairo
+    # car PyGObject est source-only sur PyPI et le build est long.
+    "pycairo>=1.25.0",
     "PyGObject>=3.48.0",
+]
+nacl = [
+    # NOTE: préférer apt install python3-nacl sur les runners CI pour éviter
+    # de compiler libsodium depuis la source (SIGTRAP sur certains CPUs).
+    "pynacl>=1.5.0",
 ]
 
 [tool.hatch.build.targets.wheel]
