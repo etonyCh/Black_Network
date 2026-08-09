@@ -105,9 +105,9 @@ apt_requirements = [
 ]
 
 pip_requirements = [
-    ("dbus-next", "0.2.3"),
     ("pydantic", "2.7.0"),
-    ("mitmproxy", "10.0.0"),  # based on spec's mitmproxy >= 12.x or 10.x requirement
+    ("cryptography", "42.0.0"),
+    ("keyring", "25.0.0"),
 ]
 
 failed = False
@@ -120,10 +120,7 @@ for pkg, ver in apt_requirements:
 print("\n=== Checking Python Packages (PIP) ===")
 for pkg, ver in pip_requirements:
     if not check_pip(pkg, ver):
-        # We don't fail CI if mitmproxy or pip requirements are missing locally before env setup is run,
-        # but let's record it.
-        if pkg != "mitmproxy":  # mitmproxy is installed via pipx/venv, check could be warnings
-            failed = True
+        failed = True
 
 if failed:
     print("\n[-] Version checks FAILED. Some dependencies do not meet the minimum requirements.")
