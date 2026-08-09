@@ -247,7 +247,7 @@ jobs:
       - name: Install System Build Deps (Rust + GTK4 dev + libs)
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends build-essential curl ca-certificates libgtk-4-dev libadwaita-1-dev libglib2.0-dev libpango1.0-dev libcairo2-dev libgdk-pixbuf-2.0-dev libgio-2.0-dev libssl-dev pkg-config clang llvm dbus polkitd apparmor libcap2-bin systemd blueprint-compiler debhelper-compat dpkg-dev gobject-introspection libgirepository-1.0-1 python3-gi python3-cairo python3-nacl python3-cffi
+          sudo apt-get install -y --no-install-recommends build-essential curl ca-certificates libgtk-4-dev libadwaita-1-dev libglib2.0-dev libpango1.0-dev libcairo2-dev libssl-dev pkg-config clang llvm dbus polkitd apparmor libcap2-bin systemd blueprint-compiler debhelper-compat dpkg-dev gobject-introspection libgirepository1.0-dev python3-gi python3-cairo python3-nacl python3-cffi
 
       - name: Install Rust stable
         run: |
