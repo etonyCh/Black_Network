@@ -41,11 +41,12 @@ netsentinel-proto = { path = "crates/netsentinel-proto" }
 
 [profile.release]
 panic = "abort"
-lto = true
+lto = "fat"
 codegen-units = 1
-opt-level = 2
-strip = true
-incremental = true
+opt-level = 3
+strip = "symbols"
+incremental = false
+overflow-checks = false
 
 [profile.dev]
 panic = "abort"

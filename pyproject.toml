@@ -18,16 +18,12 @@ classifiers = [
     "Topic :: Security",
 ]
 dependencies = [
-    "dbus-next>=0.2.3",
     "pydantic>=2.7.0",
     "cryptography>=42.0.0",
     "keyring>=25.0.0",
-    "google-genai>=0.1.1",
 ]
 
 [project.scripts]
-netsentinel = "netsentinel.ui.main:main"
-netsentinel-helperd = "netsentinel.helperd.dbus_service:main"
 
 [project.optional-dependencies]
 dev = [
@@ -36,7 +32,6 @@ dev = [
     "ruff>=0.3.0",
     "mypy>=1.9.0",
     "bandit>=1.7.8",
-    "PyGObject>=3.48.0",
 ]
 
 [tool.hatch.build.targets.wheel]
