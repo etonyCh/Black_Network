@@ -36,10 +36,7 @@ jobs:
       - name: Install APT dependencies (gi.repository bindings & crypto)
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            python3-gi python3-cairo python3-nacl python3-pydantic \
-            python3-cryptography python3-keyring python3-anyio \
-            gobject-introspection libgirepository-1.0-1
+          sudo apt-get install -y --no-install-recommends python3-gi python3-cairo python3-nacl python3-pydantic python3-cryptography python3-keyring python3-anyio gobject-introspection libgirepository-1.0-1
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
@@ -71,15 +68,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install APT deps: gi + crypto + nmap (battle-tested debian wheels)
+      - name: "Install APT deps: gi + crypto + nmap (battle-tested debian wheels)"
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            nmap arp-scan tshark \
-            libgtk-4-1 libadwaita-1-0 \
-            gobject-introspection libgirepository-1.0-1 \
-            python3-gi python3-cairo python3-nacl \
-            python3-pydantic python3-cryptography python3-keyring python3-anyio python3-cffi
+          sudo apt-get install -y --no-install-recommends nmap arp-scan tshark libgtk-4-1 libadwaita-1-0 gobject-introspection libgirepository-1.0-1 python3-gi python3-cairo python3-nacl python3-pydantic python3-cryptography python3-keyring python3-anyio python3-cffi
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
@@ -119,9 +111,7 @@ jobs:
       - name: Install APT bindings gi + cffi (semgrep peut importer)
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            python3-gi python3-cairo python3-nacl python3-pydantic \
-            python3-cryptography python3-keyring python3-anyio python3-cffi
+          sudo apt-get install -y --no-install-recommends python3-gi python3-cairo python3-nacl python3-pydantic python3-cryptography python3-keyring python3-anyio python3-cffi
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
@@ -203,9 +193,7 @@ jobs:
       - name: Install System Packages
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            libgtk-4-1 libadwaita-1-0 python3-gi blueprint-compiler \
-            nmap tshark arp-scan
+          sudo apt-get install -y --no-install-recommends libgtk-4-1 libadwaita-1-0 python3-gi python3-cairo python3-nacl python3-pydantic python3-cryptography python3-keyring python3-anyio python3-cffi gobject-introspection libgirepository-1.0-1 blueprint-compiler nmap tshark arp-scan
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
@@ -215,6 +203,7 @@ jobs:
       - name: Install project
         run: |
           python -m pip install --upgrade pip
+          pip install cryptography pydantic keyring anyio cffi
           pip install -e ".[dev]"
           pip install pip-audit
 
@@ -259,13 +248,7 @@ jobs:
       - name: Install System Build Deps (Rust + GTK4 dev + libs)
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            build-essential curl ca-certificates \
-            libgtk-4-dev libadwaita-1-dev libglib2.0-dev libpango1.0-dev \
-            libcairo2-dev libgdk-pixbuf-2.0-dev libgio-2.0-dev \
-            libssl-dev pkg-config clang llvm \
-            dbus polkitd apparmor libcap2-bin systemd \
-            blueprint-compiler debhelper-compat dpkg-dev
+          sudo apt-get install -y --no-install-recommends build-essential curl ca-certificates libgtk-4-dev libadwaita-1-dev libglib2.0-dev libpango1.0-dev libcairo2-dev libgdk-pixbuf-2.0-dev libgio-2.0-dev libssl-dev pkg-config clang llvm dbus polkitd apparmor libcap2-bin systemd blueprint-compiler debhelper-compat dpkg-dev gobject-introspection libgirepository-1.0-1 python3-gi python3-cairo python3-nacl python3-cffi
 
       - name: Install Rust stable
         run: |
