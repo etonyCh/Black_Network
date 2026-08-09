@@ -249,13 +249,17 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends build-essential curl ca-certificates libgtk-4-dev libadwaita-1-dev libglib2.0-dev libpango1.0-dev libcairo2-dev libssl-dev pkg-config clang llvm dbus polkitd apparmor libcap2-bin systemd blueprint-compiler debhelper-compat dpkg-dev gobject-introspection libgirepository1.0-dev python3-gi python3-cairo python3-nacl python3-cffi
 
-      - name: Install Rust stable
+      - name: Install Rust stable + nightly (aya-build eBPF needs nightly toolchain meta)
         run: |
           curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
           export PATH="$HOME/.cargo/bin:$PATH"
+          rustup toolchain install nightly-x86_64-unknown-linux-gnu --profile minimal --component rust-src
+          rustup default stable
           rustc --version
           cargo --version
+          echo "nightly installed (required for aya-build netsentinel-captured build.rs rustc_version_meta):"
+          rustup run nightly rustc --version 2>&1 || true
 
       - name: Cargo build — workspace release bins (5 exécutables Rust)
         working-directory: netsentinel-workspace/netsentinel
