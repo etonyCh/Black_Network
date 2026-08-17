@@ -7,7 +7,7 @@ Requires=dbus.service
 [Service]
 Type=dbus
 BusName=org.netsentinel.Discover1
-ExecStart=/usr/libexec/netsentinel-discoverd
+ExecStart=/usr/libexec/netsentinel/netsentinel-discoverd
 Restart=on-failure
 RestartSec=2
 

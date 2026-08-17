@@ -7,7 +7,7 @@ Requires=dbus.service
 [Service]
 Type=dbus
 BusName=org.netsentinel.Capture1
-ExecStart=/usr/libexec/netsentinel-captured
+ExecStart=/usr/libexec/netsentinel/netsentinel-captured
 Restart=on-failure
 RestartSec=2
 

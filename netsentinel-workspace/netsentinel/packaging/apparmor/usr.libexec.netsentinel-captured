@@ -5,7 +5,7 @@
 
 #include <tunables/global>
 
-/usr/libexec/netsentinel-captured {
+/usr/libexec/netsentinel/netsentinel-captured {
   #include <abstractions/base>
 
   capability bpf,
@@ -16,10 +16,15 @@
   network inet raw,
   network packet raw,
 
-  /usr/libexec/netsentinel-captured mr,
+  /usr/libexec/netsentinel/netsentinel-captured mr,
 
   # Programme eBPF embarqué (chargé au démarrage)
   /usr/libexec/netsentinel/*.o r,
+
+  # Données statiques critiques — LECTURE SEULE (référence PQC pour export)
+  /usr/share/netsentinel/data/vuln_database.json r,
+  /usr/share/netsentinel/data/pqc_nist_reference.json r,
+  /usr/share/netsentinel/data/checksums.sha256 r,
 
   # Point de montage bpffs (pinning des maps)
   /sys/fs/bpf/netsentinel/** rw,

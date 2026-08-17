@@ -4,7 +4,7 @@
 
 #include <tunables/global>
 
-/usr/libexec/netsentinel-discoverd {
+/usr/libexec/netsentinel/netsentinel-discoverd {
   #include <abstractions/base>
   #include <abstractions/nameservice>
 
@@ -14,12 +14,18 @@
   network inet dgram,
   network packet raw,
 
-  # Binaire lui-même
-  /usr/libexec/netsentinel-discoverd mr,
+  /usr/libexec/netsentinel/netsentinel-discoverd mr,
 
-  # Lecture seule de la conf réseau système
+  # Lecture SEULE données statiques critiques (réseau système + conf)
   /etc/resolv.conf r,
   /sys/class/net/** r,
+
+  # Données vulnérabilités + PQC (chargées éventuellement via dbus pass-through
+  # à pgsql ; ici scan-only profile -> aucune, mais on garde lecture pour
+  # cohérence future audit de firmware ARP).
+  /usr/share/netsentinel/data/vuln_database.json r,
+  /usr/share/netsentinel/data/pqc_nist_reference.json r,
+  /usr/share/netsentinel/data/checksums.sha256 r,
 
   # D-Bus système
   #include <abstractions/dbus-strict>

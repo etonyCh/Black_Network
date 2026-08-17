@@ -75,8 +75,9 @@ fn arp_scan(iface_name: &str, timeout: Duration) -> Result<Vec<DiscoveredHost>> 
     tracing::debug!(count = targets.len(), "envoi des requêtes ARP");
 
     for target_ip in &targets {
-        let packet = build_arp_request(source_mac, source_ip.0, *target_ip);
-        tx.send_to(&packet, None);
+        if let Some(packet) = build_arp_request(source_mac, source_ip.0, *target_ip) {
+            tx.send_to(&packet, None);
+        }
     }
 
     let mut found: HashMap<Ipv4Addr, DiscoveredHost> = HashMap::new();
@@ -86,7 +87,11 @@ fn arp_scan(iface_name: &str, timeout: Duration) -> Result<Vec<DiscoveredHost>> 
         match rx.next() {
             Ok(frame) => {
                 if let Some(host) = parse_arp_reply(frame) {
-                    found.entry(host.ip.parse().unwrap()).or_insert(host);
+                    if let Ok(ip) = host.ip.parse() {
+                        found.entry(ip).or_insert(host);
+                    } else {
+                        tracing::warn!("IP invalide dans arp reply: {}", host.ip);
+                    }
                 }
             }
             Err(e) if e.kind() == std::io::ErrorKind::TimedOut => continue,
@@ -127,15 +132,15 @@ fn subnet_hosts(ip: Ipv4Addr, prefix_len: u8) -> Vec<Ipv4Addr> {
         .collect()
 }
 
-fn build_arp_request(source_mac: MacAddr, source_ip: Ipv4Addr, target_ip: Ipv4Addr) -> Vec<u8> {
-    let mut ethernet_buffer = [0u8; 42];
-    let mut ethernet_packet = MutableEthernetPacket::new(&mut ethernet_buffer).unwrap();
+fn build_arp_request(source_mac: MacAddr, source_ip: Ipv4Addr, target_ip: Ipv4Addr) -> Option<Vec<u8>> {
+    let mut ethernet_buffer = vec![0u8; 42];
+    let mut ethernet_packet = MutableEthernetPacket::new(&mut ethernet_buffer)?;
     ethernet_packet.set_destination(MacAddr::broadcast());
     ethernet_packet.set_source(source_mac);
     ethernet_packet.set_ethertype(EtherTypes::Arp);
 
-    let mut arp_buffer = [0u8; 28];
-    let mut arp_packet = MutableArpPacket::new(&mut arp_buffer).unwrap();
+    let mut arp_buffer = vec![0u8; 28];
+    let mut arp_packet = MutableArpPacket::new(&mut arp_buffer)?;
     arp_packet.set_hardware_type(ArpHardwareTypes::Ethernet);
     arp_packet.set_protocol_type(EtherTypes::Ipv4);
     arp_packet.set_hw_addr_len(6);
@@ -147,7 +152,7 @@ fn build_arp_request(source_mac: MacAddr, source_ip: Ipv4Addr, target_ip: Ipv4Ad
     arp_packet.set_target_proto_addr(target_ip);
 
     ethernet_packet.set_payload(arp_packet.packet_mut());
-    ethernet_packet.packet().to_vec()
+    Some(ethernet_packet.packet().to_vec())
 }
 
 fn parse_arp_reply(frame: &[u8]) -> Option<DiscoveredHost> {

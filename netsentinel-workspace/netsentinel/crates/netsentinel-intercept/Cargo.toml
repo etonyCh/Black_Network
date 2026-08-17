@@ -10,6 +10,7 @@ path = "src/main.rs"
 
 [dependencies]
 netsentinel-proto = { workspace = true }
+netsentinel-core = { workspace = true }
 zbus = { workspace = true }
 tokio = { workspace = true, features = ["signal", "process", "net", "macros", "sync", "rt-multi-thread"] }
 tracing = { workspace = true }

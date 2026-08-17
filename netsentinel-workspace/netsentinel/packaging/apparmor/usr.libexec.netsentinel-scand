@@ -5,7 +5,7 @@
 
 #include <tunables/global>
 
-/usr/libexec/netsentinel-scand {
+/usr/libexec/netsentinel/netsentinel-scand {
   #include <abstractions/base>
   #include <abstractions/nameservice>
 
@@ -13,14 +13,25 @@
   network inet6 stream,
   network inet dgram,
 
-  /usr/libexec/netsentinel-scand mr,
+  /usr/libexec/netsentinel/netsentinel-scand mr,
+
+  # Données statiques critiques — LECTURE SEULE
+  /usr/share/netsentinel/data/vuln_database.json r,
+  /usr/share/netsentinel/data/pqc_nist_reference.json r,
+  /usr/share/netsentinel/data/checksums.sha256 r,
 
   # Exécution des scanners externes en enfants directs uniquement
-  /usr/bin/nmap Cx,
-  /usr/bin/nuclei Cx,
+  # (nuclei peut être dans /usr/bin via PPA ou /usr/local/bin via binaire Go)
+  /usr/bin/nmap         Cx -> nmap,
+  /usr/bin/nuclei       Cx -> nuclei,
+  /usr/local/bin/nuclei Cx -> nuclei,
 
   /var/lib/netsentinel/scans/ rw,
   /var/lib/netsentinel/scans/** rw,
+
+  # Templates Nuclei système (installés via PPA ou manuellement)
+  /usr/share/nuclei-templates/ r,
+  /usr/share/nuclei-templates/** r,
 
   #include <abstractions/dbus-strict>
   dbus (send, receive) bus=system path=/org/netsentinel/Scan1
@@ -34,11 +45,39 @@
 
 # Sous-profil enfant pour nmap : limite ce qu'nmap peut faire même s'il est
 # lui-même compromis (pas de setuid, pas d'accès disque hors /tmp).
-profile /usr/bin/nmap flags=(attach_disconnected) {
+profile nmap flags=(attach_disconnected) {
   #include <abstractions/base>
+  #include <abstractions/nameservice>
   network inet stream,
   network inet6 stream,
   /usr/bin/nmap mr,
   /tmp/** rw,
   deny capability net_raw,
+}
+
+# Sous-profil enfant pour nuclei :
+# Mode OFFLINE_SECURE : -no-update -ut => pas de téléchargement de templates.
+# Scan HTTP(S) applicatif (ports web ou API) + templates système YAML lus en RO.
+profile nuclei flags=(attach_disconnected) {
+  #include <abstractions/base>
+  #include <abstractions/nameservice>
+  #include <abstractions/openssl>
+
+  network inet stream,
+  network inet6 stream,
+  network inet dgram,
+
+  /usr/bin/nuclei       mr,
+  /usr/local/bin/nuclei mr,
+
+  # CA certs (pour HTTPS vers les cibles scannées)
+  /etc/ssl/** r,
+  /etc/ca-certificates/** r,
+
+  # Templates Nuclei système (lecture seule)
+  /usr/share/nuclei-templates/ r,
+  /usr/share/nuclei-templates/** r,
+
+  # Résultats JSONL / temporaires
+  /tmp/** rw,
 }

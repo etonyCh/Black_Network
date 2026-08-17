@@ -1,0 +1,9 @@
+# Manifest SHA-256 — GÉNÉRÉ AUTOMATIQUEMENT par scripts/update_data_integrity.py
+# Ne PAS éditer à la main. Utiliser `python3 scripts/update_data_integrity.py update`.
+# Format: sha256-hex  <relative path (data/...)>
+# ================================================================
+
+a25df4f6a3e73d8a4105f6401cacdffdc7f1b473f96e1621a4be71d6348fa71e  data/vuln_database.json
+8fc14f8c3ee80a5b1c266608d3f4818179110ae180f345a217c2a91411f7b8d4  data/pqc_nist_reference.json
+b9b1b7128e3a602d9062f528478b9773445b5966f8402a4ba5d4006f08778f01  data/org.netsentinel.NetSentinel.gschema.xml
+450e36f7d0cd3d72a2e5d4dde07579e510a81d975750b11fb7a88af76cb35418  data/netsentinel.desktop

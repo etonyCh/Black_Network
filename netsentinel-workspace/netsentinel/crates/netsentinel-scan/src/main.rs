@@ -14,6 +14,7 @@ use anyhow::{Context, Result};
 use netsentinel_proto::{ScanFinding, Severity, SCAN_BUS_NAME, SCAN_OBJECT_PATH};
 use serde::Deserialize;
 use tokio::process::Command;
+use tracing::warn;
 use zbus::{connection, interface};
 
 struct ScanService;
@@ -27,11 +28,17 @@ impl ScanService {
             .await
             .map_err(|e| zbus::fdo::Error::Failed(format!("échec nmap: {e}")))?;
 
-        let nuclei_findings = run_nuclei(target)
-            .await
-            .map_err(|e| zbus::fdo::Error::Failed(format!("échec nuclei: {e}")))?;
+        match run_nuclei(target).await {
+            Ok(nf) => {
+                findings.extend(nf);
+            }
+            Err(e) => {
+                // Dégradation gracieuse : nuclei non packagé sur Ubuntu par défaut
+                // On loggue, mais on retourne quand même les findings nmap.
+                warn!(%target, "Nuclei indisponible (optionnel) — poursuite avec nmap seul: {e}");
+            }
+        }
 
-        findings.extend(nuclei_findings);
         tracing::info!(count = findings.len(), "scan terminé");
         Ok(findings)
     }
@@ -102,9 +109,24 @@ struct NucleiClassification {
 
 /// Détection de CVE/misconfigurations via Nuclei (sortie JSON Lines, une
 /// ligne par finding — beaucoup plus simple à consommer que le XML nmap).
+///
+/// IMPORTANT : ce code tourne en tant qu'utilisateur système `netsentinel-scan`
+/// (sans $HOME writable ni accès réseau non explicit pour download de
+/// templates). On force donc -no-update + -ut pour éviter toute tentative de
+/// mise à jour des YAML (templating offline uniquement via ceux installés
+/// système dans /usr/share/nuclei-templates/ ou le PPA ProjectDiscovery).
 async fn run_nuclei(target: &str) -> Result<Vec<ScanFinding>> {
     let output = Command::new("nuclei")
-        .args(["-target", target, "-jsonl", "-silent"])
+        .args([
+            "-target",
+            target,
+            "-jsonl",
+            "-silent",
+            "-no-update",
+            "-ut",
+            "-update-templates-url",
+            "file:///usr/share/nuclei-templates",
+        ])
         .output()
         .await
         .context("lancement de nuclei (vérifier qu'il est installé et dans le PATH)")?;

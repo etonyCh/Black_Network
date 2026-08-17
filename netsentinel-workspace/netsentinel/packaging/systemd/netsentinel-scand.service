@@ -7,7 +7,7 @@ Requires=dbus.service
 [Service]
 Type=dbus
 BusName=org.netsentinel.Scan1
-ExecStart=/usr/libexec/netsentinel-scand
+ExecStart=/usr/libexec/netsentinel/netsentinel-scand
 Restart=on-failure
 RestartSec=2
 

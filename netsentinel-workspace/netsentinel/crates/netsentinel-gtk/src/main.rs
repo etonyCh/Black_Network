@@ -20,6 +20,10 @@ const APP_ID: &str = "org.netsentinel.App";
 fn main() -> gtk::glib::ExitCode {
     tracing_subscriber::fmt().init();
 
+    // zbus nécessite un runtime Tokio car la fonctionnalité 'tokio' est activée dans le workspace
+    let rt = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
+    let _guard = rt.enter();
+
     let app = Application::builder().application_id(APP_ID).build();
     app.connect_activate(build_ui);
     app.run()

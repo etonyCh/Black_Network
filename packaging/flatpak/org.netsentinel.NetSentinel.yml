@@ -1,0 +1,184 @@
+---
+# Flatpak Manifest — org.netsentinel.NetSentinel
+#
+# Modèle hybride recommandé par CdC v2 §9 :
+#   • Flatpak NE CONTIENT QUE le binaire UI GTK4 (`netsentinel` build Rust).
+#   • Les 4 démons privilégiés (discoverd/scand/captured/interceptd) sont
+#     installés sur l'HÔTE via le .deb (capabilities POSIX + AppArmor +
+#     systemd). Ils ne peuvent pas exister dans le sandbox Flatpak car
+#     ils doivent toucher les stacks réseau / eBPF du noyau hôte.
+#   • L'UI communique via D-Bus system bus avec --socket=system-bus.
+#
+# Build:
+#     flatpak-builder build-dir packaging/flatpak/org.netsentinel.NetSentinel.yml --force-clean --install --user
+#
+# Runtime: GNOME 47 (GTK4.14 + Libadwaita 1.5), SDK Rust pour compiler netsentinel-gtk.
+app-id: org.netsentinel.NetSentinel
+runtime: org.gnome.Platform
+runtime-version: "47"
+sdk: org.gnome.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+command: netsentinel
+
+# Tags Flathub (validation + sécurité)
+finish-args:
+  # === Graphique / input ===
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --device=dri
+  - --share=ipc
+
+  # === D-Bus (UI ↔ démons HOST) ===
+  - --socket=system-bus
+  - --socket=session-bus   # GNOME Keyring (Secret Service) + notifications
+
+  # === Réseau (D-Bus utilise le loopback de l'hôte via --socket=system-bus) ===
+  # On NE donne PAS --share=network aux démons privilégiés (hôte le gère).
+  # L'UI elle-même ne génère pas de paquets réseau — elle ne fait que
+  # appeler des méthodes D-Bus.
+
+  # === XDG desktop (icônes, fichiers rapports) ===
+  - --filesystem=xdg-download:rw
+  - --filesystem=xdg-documents:rw
+  - --filesystem=~/.local/share/netsentinel:create
+  - --own-name=org.netsentinel.NetSentinel  # (session bus, UI own name)
+
+  # === Polkit + secret (clé API Gemini dans GNOME Keyring) ===
+  - --talk-name=org.freedesktop.PolicyKit1
+  - --talk-name=org.freedesktop.secrets  # keyring via Secret Service D-Bus
+
+  # === Noyau : on ne donne AUCUN accès spécial (les démons le font sur l'hôte) ===
+  # --allow=devel, --device=all, --socket=bluetooth etc. interdits par principe.
+
+  - --env=G_MESSAGES_DEBUG=
+  - --env=RUST_BACKTRACE=0  # sandbox hardening : fuite stack interdite
+
+# Build metadata pour Flathub
+build-extension: false
+separate-locales: false
+
+modules:
+  # =================================================================
+  # 1. Dépendances Python (pip, sans accès réseau)
+  # =================================================================
+  - name: python-deps
+    buildsystem: simple
+    build-options:
+      build-args:
+        - --share=network  # autorisé PENDANT le build pour pip install
+    build-commands:
+      - pip3 install --prefix=/app --no-cache-dir --break-system-packages
+          'pydantic>=2.7.0'
+          'cryptography>=42.0.0'
+          'keyring>=25.0.0'
+          'SecretStorage>=3.3'
+          'jeepney>=0.8'
+    cleanup:
+      - /app/lib/python*/site-packages/*.dist-info
+      - /app/lib/python*/site-packages/pip*
+      - /app/bin/pip*
+
+  # =================================================================
+  # 2. Rust toolchain (extension Sdk)
+  # =================================================================
+  - name: netsentinel-gtk
+    buildsystem: simple
+    build-options:
+      append-path: /usr/lib/sdk/rust-stable/bin
+      env:
+        CARGO_HOME: /run/build/netsentinel-gtk/cargo
+        RUSTUP_TOOLCHAIN: stable
+    build-commands:
+      # Déplace la racine workspace Rust au bon endroit
+      - mv -v "$FLATPAK_BUILDER_BUILDDIR"/netsentinel-workspace/netsentinel /ws
+        || (mkdir -p /ws && cp -a netsentinel-workspace/netsentinel/* /ws/)
+      - cd /ws && pwd && ls -la
+
+      # Build le binaire UI (UNIQUEMENT netsentinel = gtk crate)
+      - cargo fetch --locked --manifest-path=/ws/Cargo.toml || true
+      - >-
+        cargo build
+        --manifest-path=/ws/Cargo.toml
+        --package netsentinel
+        --release
+        --bin netsentinel
+        --locked
+        || cargo build
+           --manifest-path=/ws/Cargo.toml
+           --package netsentinel
+           --release
+           --bin netsentinel
+
+      # Installation
+      - install -Dm0755 /ws/target/release/netsentinel        /app/bin/netsentinel
+      - install -Dm0644 /ws/target/release/netsentinel        /app/libexec/netsentinel || true
+      - find /ws -maxdepth 5 -type f -name "*.desktop" -exec install -Dm0644 {} /app/share/applications/ \; || true
+      - find /ws -path "*/data/*.desktop" -exec install -Dm0644 {} /app/share/applications/ \; || true
+      - find /ws -path "*data*" -name "org.netsentinel.NetSentinel.gschema.xml"
+          -exec install -Dm0644 {} /app/share/glib-2.0/schemas/ \; || true
+      - find / -xdev -path "*data*" -name "org.netsentinel.NetSentinel.gschema.xml" 2>/dev/null
+          -exec install -Dvm0644 {} /app/share/glib-2.0/schemas/ \; || true
+
+      # Schémas glib
+      - glib-compile-schemas /app/share/glib-2.0/schemas/ || true
+
+      # Copie données: vuln DB + référentiel PQC (lecture seule par l'UI)
+      - install -d /app/share/netsentinel/data || true
+      - find "$FLATPAK_BUILDER_BUILDDIR" /ws -maxdepth 8 -name "vuln_database.json"
+          -exec install -Dvm0644 {} /app/share/netsentinel/data/vuln_database.json \; || true
+      - find "$FLATPAK_BUILDER_BUILDDIR" /ws -maxdepth 8 -name "pqc_nist_reference.json"
+          -exec install -Dvm0644 {} /app/share/netsentinel/data/pqc_nist_reference.json \; || true
+      - find "$FLATPAK_BUILDER_BUILDDIR" /ws -maxdepth 8 -iname "*netsentinel*.svg*" -o -iname "*netsentinel*.png*"
+          2>/dev/null | head -5
+          | xargs -r -I{} install -Dvm0644 {} /app/share/icons/hicolor/scalable/apps/ 2>/dev/null || true
+
+      # Nettoyage artefacts de build Rust
+      - rm -rf /ws/target || true
+      - rm -rf "$CARGO_HOME" 2>/dev/null || true
+
+    # Sources : on pointe le dossier racine complet
+    sources:
+      - type: dir
+        path: "../../"
+        dest: .
+
+    cleanup:
+      - /app/libexec/*
+      - /app/include
+      - /app/lib/*.a
+      - /app/lib/debug
+      - /app/share/man
+      - /app/share/doc
+
+# Metadata AppStream — sert à valider le push sur Flathub
+# (Fichier séparé à placer dans packaging/flatpak/org.netsentinel.NetSentinel.appdata.xml)
+---
+# À déposer dans org.netsentinel.NetSentinel.appdata.xml (recommandé Flathub)
+# <?xml version="1.0" encoding="UTF-8"?>
+# <component type="desktop-application">
+#   <id>org.netsentinel.NetSentinel</id>
+#   <launchable type="desktop-id">org.netsentinel.NetSentinel.desktop</launchable>
+#   <name>NetSentinel</name>
+#   <summary>Audit réseau sécurisé — eBPF capture / scan / interception</summary>
+#   <developer_name>NetSentinel Team</developer_name>
+#   <url type="homepage">https://netsentinel.invalid</url>
+#   <project_license>GPL-3.0-or-later</project_license>
+#   <metadata_license>CC0-1.0</metadata_license>
+#   <recommends>
+#     <control>pointing</control>
+#     <control>keyboard</control>
+#     <display_length compare="ge">1024</display_length>
+#   </recommends>
+#   <screenshots>
+#     <screenshot type="default"><caption>Discover view</caption></screenshot>
+#   </screenshots>
+#   <content_rating type="oars-1.1"/>
+#   <releases>
+#     <release version="0.1.0" date="2026-08-08">
+#       <description><ul>
+#         <li>Première release publique: GTK4 UI Flatpak</li>
+#       </ul></description>
+#     </release>
+#   </releases>
+# </component>

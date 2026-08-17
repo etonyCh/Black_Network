@@ -10,7 +10,7 @@
 
 #include <tunables/global>
 
-/usr/libexec/netsentinel-interceptd {
+/usr/libexec/netsentinel/netsentinel-interceptd {
   #include <abstractions/base>
 
   capability net_raw,
@@ -19,7 +19,12 @@
   network inet raw,
   network packet raw,
 
-  /usr/libexec/netsentinel-interceptd mr,
+  /usr/libexec/netsentinel/netsentinel-interceptd mr,
+
+  # Jeton RE-01 + clé HMAC générés par postinst — lecture SEULE
+  # (le démon lit depuis le main.rs via std::env::var NETSENTINEL_AUTH_TOKEN
+  #  injecté par systemd EnvironmentFile=)
+  owner /etc/netsentinel.env r,
 
   # Journal d'audit — écriture seule (pas de suppression/troncature possible
   # par le service lui-même ; la rotation/purge est gérée hors de son

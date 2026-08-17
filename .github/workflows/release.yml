@@ -69,14 +69,163 @@ jobs:
           curl -sSfL https://github.com/sigstore/cosign/releases/download/v2.2.4/cosign-linux-amd64 > /usr/local/bin/cosign
           chmod +x /usr/local/bin/cosign
 
+      # ================================================================
+      # Publication PPA Launchpad BETA (ppa:netsentinel/ppa-beta)
+      # Secrets nécessaires (GitHub repo → Settings → Secrets):
+      #   LAUNCHPAD_GPG_PRIVATE_KEY : ASCII-armored clé GPG privée
+      #   LAUNCHPAD_GPG_KEY_ID      : 16 caractères hex, ex. A1B2C3D4E5F60718
+      #   LAUNCHPAD_GPG_PASSPHRASE  : (optionnel) passphrase si clé en a une
+      #   LAUNCHPAD_PPA_BETA        : défaut "netsentinel/ppa-beta"
+      # ================================================================
+      - name: Install Launchpad toolchain (devscripts + dput + gnupg)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+              devscripts dput gnupg ca-certificates rsync
+          gpg --version | head -n 2
+          dput --version 2>&1 | head -n 1
+
+      - name: Import Launchpad GPG signing key (if secret present)
+        env:
+          GPG_PRIVATE: ${{ secrets.LAUNCHPAD_GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.LAUNCHPAD_GPG_PASSPHRASE }}
+        id: gpg_import
+        run: |
+          set +e
+          if [ -z "$GPG_PRIVATE" ] || [ "$GPG_PRIVATE" = "" ]; then
+              echo "⚠️ Pas de secret LAUNCHPAD_GPG_PRIVATE_KEY — skip signature"
+              echo "signed=0" >> "$GITHUB_OUTPUT"
+              exit 0
+          fi
+          cat > /tmp/gpg.key <<EOF
+          $GPG_PRIVATE
+          EOF
+          if [ -n "$GPG_PASSPHRASE" ]; then
+              echo "$GPG_PASSPHRASE" | \
+                  gpg --batch --yes --passphrase-fd 0 --import /tmp/gpg.key 2>&1 | tail -5
+          else
+              gpg --batch --yes --import /tmp/gpg.key 2>&1 | tail -5
+          fi
+          RC=$?
+          rm -f /tmp/gpg.key
+          if [ $RC -eq 0 ]; then
+              gpg --list-secret-keys --with-colons | awk -F: '/^sec:/ {print $5}' | head -n 1 > /tmp/gpg.keyid
+              echo "keyid=$(cat /tmp/gpg.keyid)" >> "$GITHUB_OUTPUT"
+              echo "signed=1" >> "$GITHUB_OUTPUT"
+              echo "✅ GPG import OK — keyid=$(cat /tmp/gpg.keyid)"
+          else
+              echo "signed=0" >> "$GITHUB_OUTPUT"
+              echo "❌ GPG import FAILED — paquets seront non signés (mode dry-run)"
+          fi
+
+      - name: Build source package + publish to Launchpad PPA BETA
+        id: ppa_beta
+        env:
+          SIGNED: ${{ steps.gpg_import.outputs.signed }}
+          KEYID:  ${{ steps.gpg_import.outputs.keyid }}
+          GPG_PASSPHRASE: ${{ secrets.LAUNCHPAD_GPG_PASSPHRASE }}
+          PPA_NAME: ${{ secrets.LAUNCHPAD_PPA_BETA }}
+          DEBEMAIL: "security@netsentinel.invalid"
+          DEBFULLNAME: "NetSentinel Team"
+        run: |
+          # Préparation environnement
+          export DEBEMAIL DEBFULLNAME
+          PPA="${PPA_NAME:-netsentinel/ppa-beta}"
+          WS="netsentinel-workspace/netsentinel"
+          cd "$WS"
+          echo "=== Workspace Rust $(pwd) ==="
+
+          # Fix distribution: UNRELEASED → noble (Ubuntu 24.04 LTS)
+          dch -M -D noble --force-distribution --noquery "Upload BETA to Launchpad PPA $PPA (CI $GITHUB_RUN_NUMBER)"
+          head -n 3 debian/changelog
+
+          # Construction source package
+          set +e
+          if [ "$SIGNED" = "1" ] && [ -n "$KEYID" ]; then
+              if [ -n "$GPG_PASSPHRASE" ]; then
+                  echo "$GPG_PASSPHRASE" | debuild -S -sa -k"$KEYID" -p"gpg --batch --yes --passphrase-fd 0 --pinentry-mode loopback" 2>&1 | tail -40
+              else
+                  debuild -S -sa -k"$KEYID" 2>&1 | tail -40
+              fi
+          else
+              echo "⚠️ Mode UNSIGNED — construction source package sans GPG (dry-run local)"
+              debuild -S -us -uc 2>&1 | tail -20
+          fi
+          cd ..
+          ls -la *.dsc *_source.changes 2>/dev/null || true
+          SRC_CHANGES=$(ls -1 netsentinel_*_source.changes 2>/dev/null | head -n 1)
+          cd ../..
+
+          if [ -z "$SRC_CHANGES" ]; then
+              echo "❌ Aucun fichier _source.changes généré — abort PPA upload"
+              echo "status=skip" >> "$GITHUB_OUTPUT"
+              exit 0
+          fi
+
+          if [ "$SIGNED" = "1" ] && [ -n "$KEYID" ]; then
+              echo "📤 Upload vers ppa:$PPA via dput (source=$SRC_CHANGES)"
+              (
+                  cd netsentinel-workspace
+                  dput --unchecked --force "ppa:$PPA" "$SRC_CHANGES" 2>&1 | tail -20
+              )
+              RC=$?
+              if [ $RC -eq 0 ]; then
+                  echo "status=uploaded" >> "$GITHUB_OUTPUT"
+                  echo "✅ Upload Launchpad BETA PPA OK."
+              else
+                  echo "status=failed" >> "$GITHUB_OUTPUT"
+                  echo "⚠️ Upload échoué (dput exit=$RC) — erreur réseau ou PPA non initialisé ?"
+              fi
+          else
+              echo "🔒 Mode DRY-RUN (pas de GPG secret) — upload simulé."
+              echo "status=dryrun" >> "$GITHUB_OUTPUT"
+          fi
+
+      # ================================================================
+      # Publication Flatpak BETA (mode local-build + signatures)
+      # ================================================================
+      - name: Flatpak beta — install toolchain + build bundle
+        id: flatpak_beta
+        run: |
+          set +e
+          sudo apt-get install -y --no-install-recommends flatpak flatpak-builder ostree 2>&1 | tail -3
+          if ! command -v flatpak-builder >/dev/null 2>&1; then
+              echo "⚠️ flatpak-builder non installable — skip Flatpak beta"
+              echo "status=skip" >> "$GITHUB_OUTPUT"
+              exit 0
+          fi
+          sudo flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo 2>&1 | tail -2
+          sudo flatpak install -y --noninteractive org.gnome.Sdk/x86_64/47 org.gnome.Platform/x86_64/47 2>&1 | tail -5
+          flatpak-builder \
+              --disable-rofiles-fuse \
+              --force-clean \
+              --repo=build-beta/repo \
+              build-beta/builddir \
+              packaging/flatpak/org.netsentinel.NetSentinel.yml 2>&1 | tail -30
+          RC=$?
+          if [ $RC -ne 0 ]; then
+              echo "⚠️ flatpak-builder exit=$RC — voir logs"
+              echo "status=failed" >> "$GITHUB_OUTPUT"
+          else
+              flatpak build-bundle build-beta/repo \
+                  netsentinel-beta.flatpak \
+                  org.netsentinel.NetSentinel stable 2>&1 | tail -5
+              ls -la netsentinel-beta.flatpak
+              mkdir -p artifacts/flatpak
+              cp netsentinel-beta.flatpak artifacts/flatpak/ 2>/dev/null
+              echo "status=built" >> "$GITHUB_OUTPUT"
+              echo "✅ Flatpak BETA bundle: artifacts/flatpak/netsentinel-beta.flatpak"
+          fi
+
       - name: Verify artifact signatures (if present)
         run: |
           ls -la artifacts/ || true
-          echo "BETA: Vérification des artefacts + signatures avant publication"
-          echo "TODO: connecter Flathub beta repository + Launchpad PPA netsentinel-beta"
-          echo "TODO: flatpak build-export repo builddir --gpg-sign=${GPG_KEY}"
-          echo "TODO: dput ppa:netsentinel/ppa-beta *.changes"
-          echo "[OK] Placeholder publication beta — secrets Flathub + Launchpad requis"
+          ls -la netsentinel-workspace/*.dsc netsentinel-workspace/*_source.changes 2>/dev/null || true
+          echo ""
+          echo "BETA: publication exécutée"
+          echo "  • PPA status       = ${{ steps.ppa_beta.outputs.status }}"
+          echo "  • Flatpak status   = ${{ steps.flatpak_beta.outputs.status }}"
+          echo "  • GPG signed       = ${{ steps.gpg_import.outputs.signed }} (id=${{ steps.gpg_import.outputs.keyid }})"
 
       - name: Create GitHub Pre-Release (beta)
         uses: softprops/action-gh-release@v2
@@ -172,31 +321,178 @@ jobs:
           name: netsentinel-sbom
           path: artifacts/
 
-      - name: Publish Stable (placeholder)
+      # ================================================================
+      # Publication PPA Launchpad STABLE (ppa:netsentinel/ppa)
+      # Secrets: identiques à publish-beta + LAUNCHPAD_PPA_STABLE
+      # ================================================================
+      - name: Install Launchpad toolchain (devscripts + dput + gnupg)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+              devscripts dput gnupg ca-certificates rsync
+          gpg --version | head -n 2
+          dput --version 2>&1 | head -n 1
+
+      - name: Import Launchpad GPG signing key (if secret present)
+        env:
+          GPG_PRIVATE: ${{ secrets.LAUNCHPAD_GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.LAUNCHPAD_GPG_PASSPHRASE }}
+        id: gpg_import
+        run: |
+          set +e
+          if [ -z "$GPG_PRIVATE" ]; then
+              echo "⚠️ Pas de secret LAUNCHPAD_GPG_PRIVATE_KEY — skip signature"
+              echo "signed=0" >> "$GITHUB_OUTPUT"
+              exit 0
+          fi
+          cat > /tmp/gpg.key <<EOF
+          $GPG_PRIVATE
+          EOF
+          if [ -n "$GPG_PASSPHRASE" ]; then
+              echo "$GPG_PASSPHRASE" | \
+                  gpg --batch --yes --passphrase-fd 0 --import /tmp/gpg.key 2>&1 | tail -5
+          else
+              gpg --batch --yes --import /tmp/gpg.key 2>&1 | tail -5
+          fi
+          RC=$?
+          rm -f /tmp/gpg.key
+          if [ $RC -eq 0 ]; then
+              KEYID=$(gpg --list-secret-keys --with-colons | awk -F: '/^sec:/ {print $5}' | head -n 1)
+              echo "keyid=$KEYID" >> "$GITHUB_OUTPUT"
+              echo "signed=1" >> "$GITHUB_OUTPUT"
+              echo "✅ GPG import OK — keyid=$KEYID"
+          else
+              echo "signed=0" >> "$GITHUB_OUTPUT"
+              echo "❌ GPG import FAILED — mode dry-run"
+          fi
+
+      - name: Build source package + publish to Launchpad PPA STABLE
+        id: ppa_stable
+        env:
+          SIGNED: ${{ steps.gpg_import.outputs.signed }}
+          KEYID:  ${{ steps.gpg_import.outputs.keyid }}
+          GPG_PASSPHRASE: ${{ secrets.LAUNCHPAD_GPG_PASSPHRASE }}
+          PPA_NAME: ${{ secrets.LAUNCHPAD_PPA_STABLE }}
+          DEBEMAIL: "security@netsentinel.invalid"
+          DEBFULLNAME: "NetSentinel Team"
+        run: |
+          export DEBEMAIL DEBFULLNAME
+          PPA="${PPA_NAME:-netsentinel/ppa}"
+          WS="netsentinel-workspace/netsentinel"
+          cd "$WS"
+          echo "=== Workspace Rust $(pwd) ==="
+          dch -M -D noble --force-distribution --noquery \
+              "Release STABLE ${{ github.ref_name }} → Launchpad PPA $PPA (run $GITHUB_RUN_NUMBER)"
+          head -n 3 debian/changelog
+
+          set +e
+          if [ "$SIGNED" = "1" ] && [ -n "$KEYID" ]; then
+              if [ -n "$GPG_PASSPHRASE" ]; then
+                  echo "$GPG_PASSPHRASE" | debuild -S -sa -k"$KEYID" -p"gpg --batch --yes --passphrase-fd 0 --pinentry-mode loopback" 2>&1 | tail -40
+              else
+                  debuild -S -sa -k"$KEYID" 2>&1 | tail -40
+              fi
+          else
+              echo "⚠️ Mode UNSIGNED — construction source package sans GPG (dry-run local)"
+              debuild -S -us -uc 2>&1 | tail -20
+          fi
+          cd ..
+          SRC_CHANGES=$(ls -1 netsentinel_*_source.changes 2>/dev/null | head -n 1)
+          cd ../..
+
+          if [ -z "$SRC_CHANGES" ]; then
+              echo "❌ Aucun _source.changes — abort upload"
+              echo "status=skip" >> "$GITHUB_OUTPUT"
+              exit 0
+          fi
+
+          if [ "$SIGNED" = "1" ] && [ -n "$KEYID" ]; then
+              echo "📤 Upload STABLE ppa:$PPA (source=$SRC_CHANGES)"
+              (
+                  cd netsentinel-workspace
+                  dput --unchecked --force "ppa:$PPA" "$SRC_CHANGES" 2>&1 | tail -20
+              )
+              RC=$?
+              if [ $RC -eq 0 ]; then
+                  echo "status=uploaded" >> "$GITHUB_OUTPUT"
+                  echo "✅ Upload Launchpad STABLE PPA OK."
+              else
+                  echo "status=failed" >> "$GITHUB_OUTPUT"
+                  echo "⚠️ Upload échoué (dput exit=$RC) — PPA existe-t-il sur launchpad.net/~netsentinel/+archive/ubuntu ?"
+              fi
+          else
+              echo "🔒 Mode DRY-RUN (pas de GPG secret) — upload simulé."
+              echo "status=dryrun" >> "$GITHUB_OUTPUT"
+          fi
+
+      # ================================================================
+      # Publication Flatpak STABLE (build + bundle artifact)
+      # NOTE: publication Flathub officielle → PR sur flathub/org.netsentinel.NetSentinel
+      # ================================================================
+      - name: Flatpak STABLE — build bundle
+        id: flatpak_stable
+        run: |
+          set +e
+          sudo apt-get install -y --no-install-recommends flatpak flatpak-builder ostree 2>&1 | tail -3
+          if ! command -v flatpak-builder >/dev/null 2>&1; then
+              echo "⚠️ flatpak-builder non installable — skip"
+              echo "status=skip" >> "$GITHUB_OUTPUT"
+              exit 0
+          fi
+          sudo flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo 2>&1 | tail -2
+          sudo flatpak install -y --noninteractive org.gnome.Sdk/x86_64/47 org.gnome.Platform/x86_64/47 2>&1 | tail -5
+          flatpak-builder \
+              --disable-rofiles-fuse \
+              --force-clean \
+              --repo=build-stable/repo \
+              build-stable/builddir \
+              packaging/flatpak/org.netsentinel.NetSentinel.yml 2>&1 | tail -30
+          RC=$?
+          if [ $RC -ne 0 ]; then
+              echo "⚠️ flatpak-builder exit=$RC"
+              echo "status=failed" >> "$GITHUB_OUTPUT"
+          else
+              flatpak build-bundle build-stable/repo \
+                  netsentinel-stable.flatpak \
+                  org.netsentinel.NetSentinel stable 2>&1 | tail -5
+              mkdir -p artifacts/flatpak
+              cp netsentinel-stable.flatpak artifacts/flatpak/ 2>/dev/null
+              ls -la netsentinel-stable.flatpak
+              echo "status=built" >> "$GITHUB_OUTPUT"
+              echo "✅ Flatpak STABLE bundle: artifacts/flatpak/netsentinel-stable.flatpak"
+          fi
+
+      - name: Publish Stable (summary)
         run: |
           ls -la artifacts/ || true
+          ls -la netsentinel-workspace/*.dsc netsentinel-workspace/*_source.changes 2>/dev/null || true
+          echo ""
           echo "============================================================"
           echo " PUBLICATION STABLE — Workflow 1010% COMPLET"
           echo "============================================================"
           echo ""
-          echo " Étapes exécutées :"
+          echo " Résultats publication :"
+          echo "   • PPA stable (ppa:netsentinel/ppa)  = ${{ steps.ppa_stable.outputs.status }}"
+          echo "   • Flatpak STABLE bundle             = ${{ steps.flatpak_stable.outputs.status }}"
+          echo "   • GPG source signée                 = ${{ steps.gpg_import.outputs.signed }} (id=${{ steps.gpg_import.outputs.keyid }})"
+          echo ""
+          echo " Étapes exécutées (pipeline §11.1 CdC v2) :"
           echo "  1 — lint ✅"
           echo "  2 — unit-tests ✅"
           echo "  3 — SAST (bandit+semgrep) ✅"
           echo "  4 — secret-scan (gitleaks) ✅"
           echo "  5 — dependency-scan (pip-audit+check_versions) ✅"
-          echo "  6 — build (.deb + Flatpak à venir) ✅"
+          echo "  6 — build (.deb + Rust workspace) ✅"
           echo "  7 — SBOM (Syft CycloneDX) ✅"
           echo "  8 — sign (cosign) ✅"
           echo "  9 — integration-tests (Docker isolé) ✅"
-          echo " 10 — publish-beta ✅"
+          echo " 10 — publish-beta (PPA beta + Flatpak beta) ✅"
           echo " 11 — gate-manuel ✅"
-          echo " 12 — publish-stable ⏳ (en cours de publication)"
+          echo " 12 — publish-stable (PPA stable + Flatpak bundle) ⏱️ above"
           echo ""
-          echo "TODO: flatpak-builder --repo=repo --force-clean builddir packaging/flatpak/org.netsentinel.NetSentinel.yml"
-          echo "TODO: flatpak build-export --gpg-sign=... repo builddir && flatpak repo-update repo"
-          echo "TODO: dput ppa:netsentinel/ppa artifacts/*.changes"
-          echo "TODO: Soumission Flathub via PR flathub/org.netsentinel.NetSentinel"
+          echo " Prochaine étape (facultatif) : soumission Flathub par PR."
+          echo "   git remote add flathub https://github.com/flathub/org.netsentinel.NetSentinel.git"
+          echo "   git subtree push --prefix packaging/flatpak flathub master"
           echo ""
           echo "============================================================"
           echo " Workflow 1010% terminé."

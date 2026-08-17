@@ -57,16 +57,18 @@ impl CaptureService {
         // 3. Attacher le programme XDP
         let program: &mut Xdp = ebpf
             .program_mut("netsentinel_capture_ebpf")
-            .unwrap()
+            .ok_or_else(|| zbus::fdo::Error::Failed("programme eBPF introuvable".into()))?
             .try_into()
-            .unwrap();
+            .map_err(|e| zbus::fdo::Error::Failed(format!("erreur try_into Xdp: {e}")))?;
 
         program.load().map_err(|e| zbus::fdo::Error::Failed(format!("erreur load XDP: {e}")))?;
         program.attach(interface, aya::programs::xdp::XdpMode::default())
             .map_err(|e| zbus::fdo::Error::Failed(format!("erreur attach XDP sur {interface}: {e}")))?;
 
         // 4. Configurer la PerfEventArray
-        let mut perf_array = PerfEventArray::try_from(ebpf.take_map("EVENTS").unwrap())
+        let events_map = ebpf.take_map("EVENTS")
+            .ok_or_else(|| zbus::fdo::Error::Failed("map EVENTS introuvable".into()))?;
+        let mut perf_array = PerfEventArray::try_from(events_map)
             .map_err(|e| zbus::fdo::Error::Failed(format!("erreur map EVENTS: {e}")))?;
 
         let connection = self.connection.clone();
@@ -79,13 +81,31 @@ impl CaptureService {
 
             let conn_clone = connection.clone();
             tokio::spawn(async move {
-                let mut async_fd = tokio::io::unix::AsyncFd::new(buf).unwrap();
+                let mut async_fd = match tokio::io::unix::AsyncFd::new(buf) {
+                    Ok(fd) => fd,
+                    Err(e) => {
+                        tracing::error!("erreur création AsyncFd: {e}");
+                        return;
+                    }
+                };
 
                 // On crée le contexte d'émission une seule fois pour ce thread.
-                let signal_ctxt = SignalContext::new(&conn_clone, CAPTURE_OBJECT_PATH).unwrap();
+                let signal_ctxt = match SignalContext::new(&conn_clone, CAPTURE_OBJECT_PATH) {
+                    Ok(ctx) => ctx,
+                    Err(e) => {
+                        tracing::error!("erreur création SignalContext: {e}");
+                        return;
+                    }
+                };
 
                 loop {
-                    let mut guard = async_fd.readable_mut().await.unwrap();
+                    let mut guard = match async_fd.readable_mut().await {
+                        Ok(g) => g,
+                        Err(e) => {
+                            tracing::error!("erreur AsyncFd readable_mut: {e}");
+                            break;
+                        }
+                    };
                     guard.get_inner_mut().for_each(|event| {
                         if let PerfEvent::Sample { head, tail } = event {
                             let mut data = [0u8; std::mem::size_of::<PacketLog>()];
@@ -105,7 +125,7 @@ impl CaptureService {
                             let captured_packet = CapturedPacket {
                                 timestamp_ms: std::time::SystemTime::now()
                                     .duration_since(std::time::UNIX_EPOCH)
-                                    .unwrap()
+                                    .unwrap_or_default()
                                     .as_millis() as u64,
                                 src_ip: src,
                                 dst_ip: dst,

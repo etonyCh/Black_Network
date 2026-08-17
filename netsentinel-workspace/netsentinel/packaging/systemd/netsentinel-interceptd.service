@@ -1,5 +1,5 @@
 [Unit]
-Description=NetSentinel — service d'interception (Intercept1) [squelette non fonctionnel]
+Description=NetSentinel — service d'interception ARP MitM (org.netsentinel.Intercept1)
 Documentation=man:netsentinel-interceptd(8)
 After=network.target dbus.service
 Requires=dbus.service
@@ -7,13 +7,17 @@ Requires=dbus.service
 [Service]
 Type=dbus
 BusName=org.netsentinel.Intercept1
-ExecStart=/usr/libexec/netsentinel-interceptd
+ExecStart=/usr/libexec/netsentinel/netsentinel-interceptd
 Restart=on-failure
 RestartSec=2
 
-# Service désactivé par défaut (voir [Install] plus bas) : à activer
-# explicitement, et seulement après avoir implémenté le flux de consentement
-# + audit décrit dans crates/netsentinel-intercept/src/main.rs.
+# Jeton d'autorisation RE-01 (généré par debian/postinst). Systemd lit
+# ce fichier en root AVANT de déposer privileges vers User=, donc les
+# permissions 0600 root:root sont OK et ne posent pas de problème.
+EnvironmentFile=-/etc/netsentinel.env
+
+# Service désactivé par défaut (démarrage D-Bus on-demand autorisé,
+# activation enable --now seulement après audit §15 CdC v2).
 User=netsentinel-intercept
 Group=netsentinel
 CapabilityBoundingSet=CAP_NET_RAW CAP_NET_ADMIN

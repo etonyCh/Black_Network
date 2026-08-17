@@ -1,4 +1,4 @@
-name: NetSentinel CI — Workflow 1010%
+name: NetSentinel CI — Pure Rust Monorepo Workflow
 
 on:
   push:
@@ -11,159 +11,81 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  # Évite SIGTRAP (133) sur certains runners: AES-NI / CPUID limitations.
-  # Préfère les wheels binaires, n'autorise pas de build source pour
-  # les packages à risque (PyNaCl/libsodium, pycairo, PyGObject).
-  # => ceux-ci sont installés via apt (python3-nacl, python3-gi, python3-cairo)
-  CRYPTOGRAPHY_DONT_BUILD_RUST: "1"
-  PYTHONDONTWRITEBYTECODE: "1"
-  PYTHONWARNINGS: "ignore::DeprecationWarning"
-  # Force pip à préférer les wheels (ne force pas `:all:` — semgrep est sdist-only parfois)
-  PIP_PREFER_BINARY: "1"
-
 jobs:
 
   # =========================================================================
-  # ÉTAPE 1 — Lint / Format / Typage strict
+  # ÉTAPE 1 — Rust Format & Clippy Linter
   # =========================================================================
   lint:
-    name: "1 — Lint, Format & Strict Typing"
+    name: "1 — Rust Format & Clippy Check"
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install APT dependencies (gi.repository bindings & crypto)
+      - name: Install APT dependencies (GTK4 & Libadwaita dev)
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends python3-gi python3-cairo python3-nacl python3-pydantic python3-cryptography python3-keyring python3-anyio gobject-introspection libgirepository-1.0-1
+          sudo apt-get install -y --no-install-recommends libgtk-4-dev libadwaita-1-dev libglib2.0-dev libpango1.0-dev libcairo2-dev libssl-dev pkg-config
 
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
         with:
-          python-version: '3.12'
+          components: clippy, rustfmt
 
-      - name: Install Python tooling (wheels-only)
-        run: |
-          python -m pip install --upgrade pip
-          pip install ruff mypy bandit semgrep pip-audit
-          pip install cryptography pydantic keyring anyio cffi
+      - name: Cargo fmt check
+        working-directory: netsentinel-workspace/netsentinel
+        run: cargo fmt --check
 
-      - name: Ruff — Format check
-        run: ruff format --check src/ tests/
-
-      - name: Ruff — Lint
-        run: ruff check src/ tests/
-
-      - name: Mypy — Strict type check
-        run: mypy --strict --ignore-missing-imports src/
+      - name: Cargo clippy check
+        working-directory: netsentinel-workspace/netsentinel
+        run: cargo clippy --workspace --exclude netsentinel-capture-ebpf -- -D warnings
 
   # =========================================================================
-  # ÉTAPE 2 — Tests unitaires + Couverture
+  # ÉTAPE 2 — Tests unitaires Rust workspace
   # =========================================================================
   unit-tests:
-    name: "2 — Unit Tests & Coverage"
+    name: "2 — Rust Unit Tests"
     runs-on: ubuntu-24.04
     needs: lint
     steps:
       - uses: actions/checkout@v4
 
-      - name: "Install APT deps: gi + crypto + nmap (battle-tested debian wheels)"
+      - name: Install APT dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends nmap arp-scan tshark libgtk-4-1 libadwaita-1-0 gobject-introspection libgirepository-1.0-1 python3-gi python3-cairo python3-nacl python3-pydantic python3-cryptography python3-keyring python3-anyio python3-cffi
+          sudo apt-get install -y --no-install-recommends libgtk-4-dev libadwaita-1-dev libglib2.0-dev libpango1.0-dev libcairo2-dev libssl-dev pkg-config
 
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
 
-      - name: Install project + PyPI pure wheels (cryptography etc)
-        run: |
-          python -m pip install --upgrade pip
-          pip install cryptography pydantic keyring anyio cffi
-          pip install -e ".[dev]"
-
-      - name: Run Pytest with coverage threshold
-        run: |
-          export PYTHONPATH=src
-          pytest --cov=src --cov-report=term-missing --cov-fail-under=55 -p no:cacheprovider --basetemp="$RUNNER_TEMP/pytest-tmp"
-
-      - name: Upload coverage report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-report
-          path: htmlcov/
-          if-no-files-found: ignore
+      - name: Cargo test workspace
+        working-directory: netsentinel-workspace/netsentinel
+        run: cargo test --workspace --exclude netsentinel-capture-ebpf
 
   # =========================================================================
-  # ÉTAPE 3 — SAST (Static Application Security Testing)
-  # Fail-fast : JAMAIS de continue-on-error
+  # ÉTAPE 3 — Cargo Audit (SAST & CVE dependencies check)
   # =========================================================================
-  sast:
-    name: "3 — SAST (bandit + semgrep)"
+  cargo-audit:
+    name: "3 — Security Audit (cargo-audit)"
     runs-on: ubuntu-24.04
     needs: unit-tests
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install APT bindings gi + cffi (semgrep peut importer)
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends python3-gi python3-cairo python3-nacl python3-pydantic python3-cryptography python3-keyring python3-anyio python3-cffi
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
 
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Install SAST tooling
-        run: |
-          python -m pip install --upgrade pip
-          pip install bandit semgrep cryptography pydantic cffi keyring anyio
-
-      - name: Bandit — High/Critical findings only (fail on severity)
-        run: bandit -r src/ -f txt -ll
-
-      - name: Semgrep — Python security (OWASP Top 10 + no shell=True / no eval)
-        run: |
-          set -uo pipefail
-          declare -A CUSTOM
-          CUSTOM[shell-injection]='subprocess.*shell\s*=\s*True'
-          CUSTOM[dangerous-eval]='\beval\s*\('
-          CUSTOM[dangerous-exec]='\bexec\s*\('
-
-          # 1) Semgrep OWASP + Python rules (severe ERROR level only)
-          # WARN ONLY if registry unavailable — strict gate on grep block below.
-          semgrep scan \
-            --config=p/python \
-            --config=p/owasp-top-ten \
-            --severity ERROR \
-            --no-rewrite-rule-ids \
-            --error \
-            src/ tests/ \
-            || echo "[WARN] semgrep registry/rules unavailable or no ERROR-level findings — skipping"
-
-          # 2) GREP HARD FAIL — shell=True / eval() / exec() (indépendant registry)
-          MATCHES=0
-          for key in "${!CUSTOM[@]}"; do
-            count=$(grep -rnE "${CUSTOM[$key]}" src/ tests/ 2>/dev/null | wc -l || true)
-            if [ "$count" -gt 0 ]; then
-              echo "FAIL [$key] found $count occurrences of pattern: ${CUSTOM[$key]}"
-              grep -rnE "${CUSTOM[$key]}" src/ tests/ 2>/dev/null || true
-              MATCHES=$((MATCHES + count))
-            fi
-          done
-          test "$MATCHES" -eq 0
+      - name: Cargo audit scan
+        working-directory: netsentinel-workspace/netsentinel
+        run: cargo audit
 
   # =========================================================================
-  # ÉTAPE 4 — Détection de secrets (historique complet)
+  # ÉTAPE 4 — Détection de secrets dans l'historique git
   # =========================================================================
   secret-scan:
     name: "4 — Secret Scan (gitleaks)"
     runs-on: ubuntu-24.04
-    needs: sast
+    needs: cargo-audit
     steps:
       - uses: actions/checkout@v4
         with:
@@ -175,107 +97,42 @@ jobs:
           chmod +x gitleaks
           sudo mv gitleaks /usr/local/bin/
 
-      - name: Gitleaks — Full history scan
+      - name: Gitleaks scan
         run: gitleaks detect --source . --verbose --redact
 
   # =========================================================================
-  # ÉTAPE 5 — Analyse des dépendances + versions verrouillées
-  # Fail-fast : JAMAIS de continue-on-error
-  # =========================================================================
-  dependency-scan:
-    name: "5 — Dependency Scan (pip-audit + check_versions)"
-    runs-on: ubuntu-24.04
-    needs: secret-scan
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install System Packages
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libgtk-4-1 libadwaita-1-0 python3-gi python3-cairo python3-nacl python3-pydantic python3-cryptography python3-keyring python3-anyio python3-cffi gobject-introspection libgirepository-1.0-1 blueprint-compiler nmap tshark arp-scan
-
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Install project
-        run: |
-          python -m pip install --upgrade pip
-          pip install cryptography pydantic keyring anyio cffi
-          pip install -e ".[dev]"
-          pip install pip-audit
-
-      - name: Run check_versions.sh — Min requirements
-        run: |
-          chmod +x scripts/check_versions.sh
-          python3 scripts/check_versions.sh
-
-      - name: pip-audit — Fail on HIGH/CRITICAL CVEs only
-        run: |
-          set -euo pipefail
-          pip freeze | grep -v 'netsentinel' > /tmp/requirements-$$.txt
-          pip-audit --no-deps --format columns -r /tmp/requirements-$$.txt \
-            --desc ">=high" --ignore-vuln GHSA-hj5v-4cmh-hr3c --ignore-vuln GHSA-4hjg-g62x-3vpx \
-            2>&1 | tee /tmp/pip-audit.log || true
-          echo "---"
-          if grep -qE 'Found (.*) (known|vulnerabilit)' /tmp/pip-audit.log; then
-            CRIT_COUNT=$(grep -cE '\b(HIGH|CRITICAL)\b' /tmp/pip-audit.log || true)
-            echo "pip-audit HIGH/CRITICAL count: ${CRIT_COUNT}"
-            if [ "${CRIT_COUNT}" -gt 0 ]; then
-              echo "FAIL: HIGH/CRITICAL CVE detected — see /tmp/pip-audit.log"
-              exit 1
-            fi
-          fi
-          echo "pip-audit: OK (no HIGH/CRITICAL)"
-
-        env:
-          PIP_DISABLE_PIP_VERSION_CHECK: "1"
-
-  # =========================================================================
-  # ÉTAPE 6 — Build paquet .deb Rust (bins 5 + AppArmor + D-Bus + systemd + polkit)
+  # ÉTAPE 5 — Build paquet .deb (Rust workspace release)
   # =========================================================================
   build:
-    name: "6 — Build (.deb Rust workspace)"
+    name: "5 — Build (.deb Rust workspace)"
     runs-on: ubuntu-24.04
-    needs: dependency-scan
+    needs: secret-scan
     outputs:
       deb-artifact: ${{ steps.upload-deb.outputs.artifact-id }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install System Build Deps (Rust + GTK4 dev + libs)
+      - name: Install System Build Deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends build-essential curl ca-certificates libgtk-4-dev libadwaita-1-dev libglib2.0-dev libpango1.0-dev libcairo2-dev libssl-dev pkg-config clang llvm dbus polkitd apparmor libcap2-bin systemd blueprint-compiler debhelper-compat dpkg-dev gobject-introspection libgirepository1.0-dev python3-gi python3-cairo python3-nacl python3-cffi
+          sudo apt-get install -y --no-install-recommends build-essential curl ca-certificates libgtk-4-dev libadwaita-1-dev libglib2.0-dev libpango1.0-dev libcairo2-dev libssl-dev pkg-config clang llvm dbus polkitd apparmor libcap2-bin systemd debhelper-compat dpkg-dev
 
-      - name: Install Rust stable + nightly (aya-build eBPF needs nightly toolchain meta)
+      - name: Install Rust stable & nightly
         run: |
           curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
           export PATH="$HOME/.cargo/bin:$PATH"
           rustup toolchain install nightly-x86_64-unknown-linux-gnu --profile minimal --component rust-src,llvm-tools-preview
           rustup default stable
-          rustc --version
-          cargo --version
-          echo "nightly installed (required for aya-build netsentinel-captured build.rs rustc_version_meta):"
-          rustup run nightly rustc --version 2>&1 || true
-          rustup component list --toolchain nightly | grep llvm-tools-preview || true
 
-      - name: Install bpf-linker (netsentinel-capture-ebpf build.rs L15 which("bpf-linker").unwrap())
-        run: |
-          export PATH="$HOME/.cargo/bin:$PATH"
-          cargo install bpf-linker --locked --no-track
-          echo "bpf-linker installed at: $(which bpf-linker)"
-          bpf-linker --version
+      - name: Install bpf-linker
+        run: cargo install bpf-linker --locked --no-track
 
-      - name: Cargo build — workspace release bins (5 exécutables Rust)
+      - name: Cargo build release bins
         working-directory: netsentinel-workspace/netsentinel
-        run: |
-          export PATH="$HOME/.cargo/bin:$PATH"
-          cargo build --workspace --profile release --bins --exclude netsentinel-capture-ebpf
+        run: cargo build --workspace --profile release --bins --exclude netsentinel-capture-ebpf
 
-      - name: Assemble .deb staging dir + dpkg-deb build
+      - name: Assemble .deb staging dir
         working-directory: netsentinel-workspace/netsentinel
         run: |
           set -euo pipefail
@@ -292,19 +149,7 @@ jobs:
           ICONS="/usr/share/icons/hicolor/scalable/apps"
           DESKTOP_DIR="/usr/share/applications"
           DATA_DIR="/usr/share/netsentinel/data"
-          LOG_DIR="/var/log"
 
-          # 0) DEFENSE: liste explicite bins produits dans target/release
-          #    Bin names (from Cargo.toml [[bin]]): discoverd, scand, captured, interceptd, netsentinel (GTK4 name NOT netsentinel-gtk)
-          echo "=== target/$TARGET_PROFILE bins available ==="
-          ls -1 "target/$TARGET_PROFILE" | awk 'NF{print "  - " $0}'
-          echo "=== verifying expected 5 bins exist ==="
-          for b in netsentinel-discoverd netsentinel-scand netsentinel-captured netsentinel-interceptd netsentinel; do
-            test -f "target/$TARGET_PROFILE/$b" || { echo "MISSING BIN: target/$TARGET_PROFILE/$b" >&2; exit 2; }
-            echo "  + $b present"
-          done
-
-          # Create directory hierarchy
           install -d -m 0755 "$STAGING/DEBIAN"
           install -d -m 0755 "$STAGING/$LIBEXEC"
           install -d -m 0755 "$STAGING/$INSTALL_ROOT/bin"
@@ -315,117 +160,45 @@ jobs:
           install -d -m 0755 "$STAGING/$POLKIT_ACTIONS"
           install -d -m 0755 "$STAGING/$APPARMOR_DIR"
           install -d -m 0755 "$STAGING/$SYSTEMD_UNITS"
-          install -d -m 0755 "$STAGING/$LOG_DIR"
           install -d -m 0755 "$STAGING/$DATA_DIR"
 
-          # 1) Rust executables (CAP_NET_RAW/BPF via setcap dans postinst)
-          #    crates/netsentinel-gtk [[bin]].name = "netsentinel" (package was renamed from netsentinel-gtk)
           install -m 0755 "target/$TARGET_PROFILE/netsentinel-discoverd"  "$STAGING/$LIBEXEC/"
           install -m 0755 "target/$TARGET_PROFILE/netsentinel-scand"      "$STAGING/$LIBEXEC/"
           install -m 0755 "target/$TARGET_PROFILE/netsentinel-captured"   "$STAGING/$LIBEXEC/"
           install -m 0755 "target/$TARGET_PROFILE/netsentinel-interceptd" "$STAGING/$LIBEXEC/"
           install -m 0755 "target/$TARGET_PROFILE/netsentinel"            "$STAGING/$INSTALL_ROOT/bin/netsentinel"
 
-          # 2) D-Bus system bus policies
           install -m 0644 packaging/dbus-system.d/org.netsentinel.Discover1.conf "$STAGING/$DBUS_CONF/"
           install -m 0644 packaging/dbus-system.d/org.netsentinel.Capture1.conf  "$STAGING/$DBUS_CONF/"
           install -m 0644 packaging/dbus-system.d/org.netsentinel.Scan1.conf     "$STAGING/$DBUS_CONF/"
           install -m 0644 packaging/dbus-system.d/org.netsentinel.Intercept1.conf "$STAGING/$DBUS_CONF/"
 
-          # 3) AppArmor 4 profils
           install -m 0644 packaging/apparmor/usr.libexec.netsentinel-discoverd  "$STAGING/$APPARMOR_DIR/"
           install -m 0644 packaging/apparmor/usr.libexec.netsentinel-scand      "$STAGING/$APPARMOR_DIR/"
           install -m 0644 packaging/apparmor/usr.libexec.netsentinel-captured   "$STAGING/$APPARMOR_DIR/"
           install -m 0644 packaging/apparmor/usr.libexec.netsentinel-interceptd "$STAGING/$APPARMOR_DIR/"
 
-          # 4) Systemd units 4
           install -m 0644 packaging/systemd/netsentinel-discoverd.service  "$STAGING/$SYSTEMD_UNITS/"
           install -m 0644 packaging/systemd/netsentinel-scand.service      "$STAGING/$SYSTEMD_UNITS/"
           install -m 0644 packaging/systemd/netsentinel-captured.service   "$STAGING/$SYSTEMD_UNITS/"
           install -m 0644 packaging/systemd/netsentinel-interceptd.service "$STAGING/$SYSTEMD_UNITS/"
 
-          # 5) Polkit (org.netsentinel.Intercept1 gated)
-          if [ -f packaging/polkit/org.netsentinel.policy ]; then
-            install -m 0644 packaging/polkit/org.netsentinel.policy "$STAGING/$POLKIT_ACTIONS/"
-          fi
-
-          # 6) Schemas Glib + desktop + icons + data depuis data/ (racine projet)
-          ROOT_DATA="${GITHUB_WORKSPACE}/data"
-          if [ -f "${ROOT_DATA}/org.netsentinel.NetSentinel.gschema.xml" ]; then
-            install -m 0644 "${ROOT_DATA}/org.netsentinel.NetSentinel.gschema.xml" "$STAGING/$GLIB_SCHEMAS/"
-          fi
-          if [ -f "${ROOT_DATA}/gschemas.compiled" ]; then
-            install -m 0644 "${ROOT_DATA}/gschemas.compiled" "$STAGING/$GLIB_SCHEMAS/"
-          fi
-          if [ -f "${ROOT_DATA}/netsentinel.svg" ]; then
-            install -m 0644 "${ROOT_DATA}/netsentinel.svg" "$STAGING/$ICONS/org.netsentinel.NetSentinel.svg"
-          fi
-          if [ -f "${ROOT_DATA}/netsentinel.desktop" ]; then
-            install -m 0644 "${ROOT_DATA}/netsentinel.desktop" "$STAGING/$DESKTOP_DIR/org.netsentinel.NetSentinel.desktop"
-          fi
-          if [ -f "${ROOT_DATA}/pqc_nist_reference.json" ]; then
-            install -m 0644 "${ROOT_DATA}/pqc_nist_reference.json" "$STAGING/$DATA_DIR/"
-          fi
-          if [ -f "${ROOT_DATA}/vuln_database.json" ]; then
-            install -m 0644 "${ROOT_DATA}/vuln_database.json" "$STAGING/$DATA_DIR/"
-          fi
-
-          # 7) DEBIAN/binary package control files + scripts
-          #    CRITICAL dpkg-deb rule: $STAGING/DEBIAN/control MUST START with
-          #    "Package:" on line 1 (BINARY format). packaging/debian/control on
-          #    disk is a SOURCE control file (starts with Source:) -> INVALID.
-          #    We write the binary control with echo statements (no heredoc
-          #    terminator indentation issues that break YAML parsing).
-          if [ -f packaging/debian/postinst ]; then install -m 0755 packaging/debian/postinst "$STAGING/DEBIAN/postinst"; fi
-          if [ -f packaging/debian/prerm    ]; then install -m 0755 packaging/debian/prerm    "$STAGING/DEBIAN/prerm";    fi
-
           CONTROL_FILE="$STAGING/DEBIAN/control"
           : > "$CONTROL_FILE"
-          echo "Package: netsentinel"                                   >> "$CONTROL_FILE"
-          echo "Version: 0.1.0"                                         >> "$CONTROL_FILE"
-          echo "Section: utils"                                         >> "$CONTROL_FILE"
-          echo "Priority: optional"                                     >> "$CONTROL_FILE"
-          echo "Architecture: ${ARCH}"                                  >> "$CONTROL_FILE"
+          echo "Package: netsentinel" >> "$CONTROL_FILE"
+          echo "Version: 0.1.0" >> "$CONTROL_FILE"
+          echo "Section: utils" >> "$CONTROL_FILE"
+          echo "Priority: optional" >> "$CONTROL_FILE"
+          echo "Architecture: ${ARCH}" >> "$CONTROL_FILE"
           echo "Maintainer: NetSentinel Team <security@netsentinel.invalid>" >> "$CONTROL_FILE"
-          echo "Homepage: https://netsentinel.invalid"                  >> "$CONTROL_FILE"
+          echo "Homepage: https://netsentinel.invalid" >> "$CONTROL_FILE"
           echo "Depends: libgtk-4-1, libadwaita-1-0, libglib2.0-0, libpango-1.0-0, libcairo2, libgdk-pixbuf-2.0-0, libssl3, dbus-system-bus, polkitd, apparmor, systemd, libcap2-bin" >> "$CONTROL_FILE"
-          echo "Recommends: nmap, arp-scan, tshark, wireshark-common"   >> "$CONTROL_FILE"
-          echo "Description: GNOME GTK4 network audit + eBPF interception for Linux" >> "$CONTROL_FILE"
-          echo " NetSentinel is a monolithic Linux security tool for GNOME (GTK4 +" >> "$CONTROL_FILE"
-          echo " Libadwaita) targeting Debian and Ubuntu. It combines the following" >> "$CONTROL_FILE"
-          echo " ."                                                      >> "$CONTROL_FILE"
-          echo "  - ultra-fast eBPF XDP capture via Aya interface (kernel 5.10+)" >> "$CONTROL_FILE"
-          echo "  - native ARP scanning (CAP_NET_RAW only, no full root)" >> "$CONTROL_FILE"
-          echo "  - vulnerability audit via nmap plus tshark"           >> "$CONTROL_FILE"
-          echo "  - ARP man-in-the-middle interception with automatic re-ARP (30 min)" >> "$CONTROL_FILE"
-          echo " ."                                                      >> "$CONTROL_FILE"
-          echo " Privileged components (4 daemons) are isolated via AppArmor, executed" >> "$CONTROL_FILE"
-          echo " with the minimum POSIX capabilities required, and managed by systemd" >> "$CONTROL_FILE"
-          echo " Type=dbus with on-demand activation."                  >> "$CONTROL_FILE"
+          echo "Description: Pure Rust GNOME GTK4 network audit + eBPF security suite" >> "$CONTROL_FILE"
           chmod 0644 "$CONTROL_FILE"
-          echo "=== GENERATED DEBIAN/control (first 15 lines) ==="
-          head -15 "$CONTROL_FILE"
-          echo "=== DEBIAN/ dir listing ==="
-          ls -la "$STAGING/DEBIAN/"
 
-          # 8) dpkg-shlibdeps auto shlibs Depends (GTK4 etc)
-          dpkg-shlibdeps -O \
-            "$STAGING/$LIBEXEC/netsentinel-discoverd" \
-            "$STAGING/$LIBEXEC/netsentinel-scand" \
-            "$STAGING/$LIBEXEC/netsentinel-captured" \
-            "$STAGING/$LIBEXEC/netsentinel-interceptd" \
-            "$STAGING/$INSTALL_ROOT/bin/netsentinel" \
-            > debian/shlibs.local 2>/dev/null || true
-
-          # Build final .deb
           DEB_FILENAME="${GITHUB_WORKSPACE}/netsentinel_0.1.0_${ARCH}.deb"
           dpkg-deb --build --root-owner-group "$STAGING" "$DEB_FILENAME"
           echo "DEB_PATH=$DEB_FILENAME" >> "$GITHUB_ENV"
-          ls -la "$DEB_FILENAME"
-          dpkg-deb -I "$DEB_FILENAME"
-          dpkg-deb -c "$DEB_FILENAME" > /tmp/netsentinel-deb-contents.txt 2>/dev/null || true
-          echo "=== .deb contents (first 40 entries) ==="
-          head -40 /tmp/netsentinel-deb-contents.txt
 
       - id: upload-deb
         name: Upload .deb artifact
@@ -435,72 +208,20 @@ jobs:
           path: ${{ env.DEB_PATH }}
 
   # =========================================================================
-  # ÉTAPE 7 — SBOM (Software Bill of Materials)
+  # ÉTAPE 6 — SBOM (CycloneDX JSON via Syft)
   # =========================================================================
   sbom:
-    name: "7 — SBOM (Syft → CycloneDX)"
+    name: "6 — SBOM (Syft → CycloneDX)"
     runs-on: ubuntu-24.04
     needs: build
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
+      - name: Install Syft
+        run: curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
 
-      - name: Install project & Syft
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
-          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
-
-      - name: Generate CycloneDX SBOM (Python + Rust monorepo)
-        run: |
-          # ------------------------------------------------------------------
-          # DIAGNOSTIC LOGS (verify syft env before scanning)
-          # ------------------------------------------------------------------
-          echo "=== syft version ==="
-          syft version
-          echo "=== PWD ==="
-          pwd
-          echo "=== workspace root files (need pyproject.toml for Python + Cargo for Rust) ==="
-          ls -la "${{ github.workspace }}"
-          echo "=== Rust workspace exists? ==="
-          ls -la "${{ github.workspace }}/netsentinel-workspace/netsentinel/" 2>/dev/null || echo "  not found"
-
-          # Modern Syft: `syft scan` replaces deprecated `syft packages`
-          # Source `dir:` scheme (not legacy `python:`) = Syft auto-detects
-          # Python deps via pyproject.toml/requirements AND Rust crates via
-          # Cargo.lock/Cargo.toml in subdirectories (hybrid monorepo).
-          syft scan \
-            --output cyclonedx-json=netsentinel-sbom.cdx.json \
-            dir:${{ github.workspace }}
-
-          # ------------------------------------------------------------------
-          # POST-DIAGNOSTIC (confirm SBOM was actually written)
-          # ------------------------------------------------------------------
-          echo "=== SBOM generated ==="
-          ls -la netsentinel-sbom.cdx.json
-          echo "=== first 30 lines of SBOM (sanity check valid JSON header) ==="
-          head -30 netsentinel-sbom.cdx.json
-          echo "=== number of packages listed in SBOM ==="
-          cat > /tmp/check_sbom.py <<'PYEOF'
-          import json, sys
-          try:
-              with open('netsentinel-sbom.cdx.json') as f:
-                  d = json.load(f)
-              comps = d.get('components', [])
-              names = [c.get('name','?') for c in comps[:15]]
-              print(f'TOTAL packages in CycloneDX: {len(comps)}')
-              print('First 15 packages:')
-              for n in names:
-                  print(f'  - {n}')
-          except Exception as e:
-              print(f'WARN: could not parse SBOM JSON: {e}', file=sys.stderr)
-              sys.exit(0)
-          PYEOF
-          python3 /tmp/check_sbom.py
+      - name: Generate CycloneDX SBOM
+        run: syft scan --output cyclonedx-json=netsentinel-sbom.cdx.json dir:${{ github.workspace }}/netsentinel-workspace/netsentinel
 
       - name: Upload SBOM artifact
         uses: actions/upload-artifact@v4
@@ -509,10 +230,10 @@ jobs:
           path: netsentinel-sbom.cdx.json
 
   # =========================================================================
-  # ÉTAPE 8 — Signature des artefacts
+  # ÉTAPE 7 — Signature des artefacts (cosign)
   # =========================================================================
   sign:
-    name: "8 — Sign Artifacts (cosign)"
+    name: "7 — Sign Artifacts (cosign)"
     runs-on: ubuntu-24.04
     needs: sbom
     permissions:
@@ -536,53 +257,13 @@ jobs:
           curl -sSfL https://github.com/sigstore/cosign/releases/download/v2.2.4/cosign-linux-amd64 > /usr/local/bin/cosign
           chmod +x /usr/local/bin/cosign
 
-      - name: Sign .deb with keyless cosign (on push main only)
+      - name: Sign .deb with keyless cosign
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
-          if [ -f netsentinel_0.1.0_all.deb ]; then
-            cosign sign-blob --yes netsentinel_0.1.0_all.deb > netsentinel_0.1.0_all.deb.sig || true
+          if [ -f netsentinel_0.1.0_*.deb ]; then
+            DEB="$(ls netsentinel_0.1.0_*.deb | head -1)"
+            cosign sign-blob --yes "$DEB" > "$DEB.sig" || true
           fi
           if [ -f netsentinel-sbom.cdx.json ]; then
             cosign sign-blob --yes netsentinel-sbom.cdx.json > netsentinel-sbom.cdx.json.sig || true
           fi
-
-      - name: Upload signatures
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: actions/upload-artifact@v4
-        with:
-          name: netsentinel-signatures
-          path: |
-            *.sig
-
-  # =========================================================================
-  # ÉTAPE 9 — Tests d'intégration (réseau Docker isolé)
-  # =========================================================================
-  integration-tests:
-    name: "9 — Integration Tests (Docker isolated network)"
-    runs-on: ubuntu-24.04
-    needs: sign
-    services:
-      docker:
-        image: docker:24-dind
-        options: --privileged
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Install project
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
-
-      - name: Integration tests placeholder (Docker network target)
-        run: |
-          echo "=== Intégration: réseau de test isolé ==="
-          echo "Tests d'intégration seront exécutés contre un réseau Docker dédié."
-          echo "Modules: A (Network Map) + B (Fingerprint) + C (Capture) + D (Interceptor) + E (Enumeration)"
-          echo "Réseau: 172.28.0.0/24 — jamais exposé, jamais de scan contre IP publique."
-          mkdir -p tests/integration
-          echo "[OK] Placeholder d'intégration, à compléter avec docker-compose.test-network.yml"

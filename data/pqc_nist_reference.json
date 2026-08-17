@@ -1,7 +1,7 @@
 {
   "title": "NIST PQC Algorithm Reference Profile",
   "version": "1.0",
-  "last_updated": "2026-07-18",
+  "last_updated": "2024-01-01",
   "ciphers": {
     "sntrup761x25519-sha512@openssh.com": "quantum_safe",
     "mlkem768x25519-sha256": "quantum_safe",
