@@ -3,9 +3,16 @@ use aya_build::Toolchain;
 
 fn main() -> anyhow::Result<()> {
     println!("cargo:rerun-if-env-changed=AYA_BUILD_SKIP");
+    let out_dir = std::env::var_os("OUT_DIR").unwrap();
+    let out_path = std::path::Path::new(&out_dir).join("netsentinel-capture-ebpf");
+
     if std::env::var("AYA_BUILD_SKIP").is_ok() {
+        if !out_path.exists() {
+            std::fs::write(&out_path, [])?;
+        }
         return Ok(());
     }
+
     let cargo_metadata::Metadata { packages, .. } = cargo_metadata::MetadataCommand::new()
         .no_deps()
         .exec()
@@ -27,5 +34,11 @@ fn main() -> anyhow::Result<()> {
             .as_str(),
         ..Default::default()
     };
-    aya_build::build_ebpf([ebpf_package], Toolchain::default())
+    if let Err(e) = aya_build::build_ebpf([ebpf_package], Toolchain::default()) {
+        if !out_path.exists() {
+            std::fs::write(&out_path, [])?;
+        }
+        return Err(e);
+    }
+    Ok(())
 }
