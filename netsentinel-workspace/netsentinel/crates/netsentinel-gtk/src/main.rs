@@ -10,7 +10,9 @@
 //! utilise un flux zbus consommé dans la même tâche locale.
 
 use adw::prelude::*;
-use adw::{Application, ApplicationWindow, HeaderBar, NavigationPage, NavigationSplitView, ToolbarView};
+use adw::{
+    Application, ApplicationWindow, HeaderBar, NavigationPage, NavigationSplitView, ToolbarView,
+};
 use gtk::{Align, Box as GtkBox, Label, ListBox, ListBoxRow, Orientation, SelectionMode, Stack};
 
 mod views;
@@ -32,10 +34,18 @@ fn main() -> gtk::glib::ExitCode {
 fn build_ui(app: &Application) {
     // --- Contenu : une page par phase, empilées dans un GtkStack -----
     let content_stack = Stack::builder().build();
-    content_stack.add_titled(&views::discover::build_page(), Some("discover"), "Découverte");
+    content_stack.add_titled(
+        &views::discover::build_page(),
+        Some("discover"),
+        "Découverte",
+    );
     content_stack.add_titled(&views::capture::build_page(), Some("capture"), "Capture");
     content_stack.add_titled(&views::scan::build_page(), Some("scan"), "Audit");
-    content_stack.add_titled(&views::intercept::build_page(), Some("intercept"), "Intercepteur");
+    content_stack.add_titled(
+        &views::intercept::build_page(),
+        Some("intercept"),
+        "Intercepteur",
+    );
     content_stack.add_titled(&placeholder_page("Rapport"), Some("report"), "Rapport");
 
     // --- Sidebar : liste de navigation stylée selon le HIG GNOME -----
@@ -117,5 +127,3 @@ fn placeholder_page(title: &str) -> GtkBox {
     )));
     container
 }
-
-

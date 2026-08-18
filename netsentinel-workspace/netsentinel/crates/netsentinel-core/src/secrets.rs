@@ -41,7 +41,11 @@ impl KeyringStore {
         match entry.delete_credential() {
             Ok(_) => Ok(()),
             Err(keyring::Error::NoEntry) => Ok(()),
-            Err(e) => Err(anyhow!("Erreur suppression secret keyring `{}` : {}", key, e)),
+            Err(e) => Err(anyhow!(
+                "Erreur suppression secret keyring `{}` : {}",
+                key,
+                e
+            )),
         }
     }
 }
@@ -121,7 +125,10 @@ mod tests {
     fn test_ram_store_zeroization() {
         let store = RamStore::new();
         store.set_secret("API_KEY", "super_secret_token_123");
-        assert_eq!(store.get_secret("API_KEY"), Some("super_secret_token_123".to_string()));
+        assert_eq!(
+            store.get_secret("API_KEY"),
+            Some("super_secret_token_123".to_string())
+        );
 
         store.delete_secret("API_KEY");
         assert_eq!(store.get_secret("API_KEY"), None);

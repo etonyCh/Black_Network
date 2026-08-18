@@ -30,7 +30,11 @@ struct DiscoverService {
 
 #[interface(name = "org.netsentinel.Discover1")]
 impl DiscoverService {
-    async fn scan(&self, interface: &str, timeout_ms: u32) -> zbus::fdo::Result<Vec<DiscoveredHost>> {
+    async fn scan(
+        &self,
+        interface: &str,
+        timeout_ms: u32,
+    ) -> zbus::fdo::Result<Vec<DiscoveredHost>> {
         let iface_name = interface.to_string();
         let timeout = Duration::from_millis(timeout_ms as u64);
 
@@ -132,7 +136,11 @@ fn subnet_hosts(ip: Ipv4Addr, prefix_len: u8) -> Vec<Ipv4Addr> {
         .collect()
 }
 
-fn build_arp_request(source_mac: MacAddr, source_ip: Ipv4Addr, target_ip: Ipv4Addr) -> Option<Vec<u8>> {
+fn build_arp_request(
+    source_mac: MacAddr,
+    source_ip: Ipv4Addr,
+    target_ip: Ipv4Addr,
+) -> Option<Vec<u8>> {
     let mut ethernet_buffer = vec![0u8; 42];
     let mut ethernet_packet = MutableEthernetPacket::new(&mut ethernet_buffer)?;
     ethernet_packet.set_destination(MacAddr::broadcast());
@@ -168,8 +176,8 @@ fn parse_arp_reply(frame: &[u8]) -> Option<DiscoveredHost> {
     Some(DiscoveredHost {
         ip: arp.get_sender_proto_addr().to_string(),
         mac: arp.get_sender_hw_addr().to_string(),
-        vendor: String::new(),     // TODO: lookup OUI local (base IEEE embarquée)
-        hostname: String::new(),   // TODO: résolution mDNS/NetBIOS optionnelle
+        vendor: String::new(),   // TODO: lookup OUI local (base IEEE embarquée)
+        hostname: String::new(), // TODO: résolution mDNS/NetBIOS optionnelle
     })
 }
 

@@ -40,7 +40,7 @@ impl AuditLogger {
 
         // Serialize without signature for signing
         let data_to_sign = serde_json::to_string(&entry)?;
-        
+
         let signature = hmac::sign(&self.key, data_to_sign.as_bytes());
         entry.signature = Some(hex::encode(signature.as_ref()));
 
@@ -53,7 +53,7 @@ impl AuditLogger {
             .open(Path::new(&self.log_path))?;
 
         writeln!(file, "{}", final_json)?;
-        
+
         Ok(())
     }
 

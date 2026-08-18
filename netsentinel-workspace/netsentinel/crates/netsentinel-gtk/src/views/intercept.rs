@@ -1,7 +1,7 @@
 use adw::prelude::*;
 use adw::{ActionRow, EntryRow, PreferencesGroup};
 use gtk::{
-    Align, Box as GtkBox, Button, CheckButton, Entry, Label, LevelBar, Orientation, Spinner, glib,
+    glib, Align, Box as GtkBox, Button, CheckButton, Entry, Label, LevelBar, Orientation, Spinner,
 };
 use std::time::Instant;
 
@@ -165,12 +165,24 @@ pub fn build_page() -> GtkBox {
         btn.set_sensitive(ok);
     }
 
-    consent_for_gate.connect_toggled(glib::clone!(#[strong] token_for_gate, #[strong] start_for_gate, move |c| {
-        refresh_start_gate(c, &token_for_gate, &start_for_gate);
-    }));
-    token_for_gate.connect_changed(glib::clone!(#[strong] consent_for_gate, #[strong] start_for_gate, move |t| {
-        refresh_start_gate(&consent_for_gate, t, &start_for_gate);
-    }));
+    consent_for_gate.connect_toggled(glib::clone!(
+        #[strong]
+        token_for_gate,
+        #[strong]
+        start_for_gate,
+        move |c| {
+            refresh_start_gate(c, &token_for_gate, &start_for_gate);
+        }
+    ));
+    token_for_gate.connect_changed(glib::clone!(
+        #[strong]
+        consent_for_gate,
+        #[strong]
+        start_for_gate,
+        move |t| {
+            refresh_start_gate(&consent_for_gate, t, &start_for_gate);
+        }
+    ));
 
     // ========== HANDLER : START ==========
     let start_btn_clone = start_button.clone();

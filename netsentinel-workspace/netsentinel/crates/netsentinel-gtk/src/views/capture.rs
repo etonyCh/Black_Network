@@ -1,11 +1,11 @@
 use adw::prelude::*;
 use adw::{ActionRow, PreferencesGroup};
+use futures_util::StreamExt;
 use gtk::{
     Align, Box as GtkBox, Button, DropDown, Label, ListBox, Orientation, ScrolledWindow,
     SelectionMode, StringList,
 };
 use std::path::Path;
-use futures_util::StreamExt;
 
 fn list_network_interfaces() -> Vec<String> {
     let mut ifaces: Vec<String> = Vec::new();

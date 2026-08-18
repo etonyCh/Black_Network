@@ -57,14 +57,12 @@ pub fn build_page() -> GtkBox {
 
     // Bannière d'état Nuclei (optionnel recommandé)
     let nuclei_banner = if nuclei_is_installed() {
-        
         Label::builder()
             .label("<span foreground='#26a269'>✅ Nuclei détecté — audit complet (nmap + CVE/YAML)</span>")
             .use_markup(true)
             .halign(Align::Start)
             .build()
     } else {
-        
         Label::builder()
             .label("<span foreground='#e5a50a'>⚠️ Nuclei non installé — audit en mode dégradé (nmap seul, sans CVE).\nInstaller depuis ProjectDiscovery/releases puis déposer les templates YAML dans <tt>/usr/share/nuclei-templates/</tt>.</span>")
             .use_markup(true)
@@ -77,7 +75,9 @@ pub fn build_page() -> GtkBox {
     // Configuration de la cible
     let config_group = PreferencesGroup::new();
     config_group.set_title("Cible");
-    config_group.set_description(Some("Adresse IP ou hostname LAN appartenant au périmètre autorisé (RE-02)."));
+    config_group.set_description(Some(
+        "Adresse IP ou hostname LAN appartenant au périmètre autorisé (RE-02).",
+    ));
     let target_entry = EntryRow::builder()
         .title("Cible")
         .text("192.168.1.1")

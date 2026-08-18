@@ -61,12 +61,18 @@ impl CaptureService {
             .try_into()
             .map_err(|e| zbus::fdo::Error::Failed(format!("erreur try_into Xdp: {e}")))?;
 
-        program.load().map_err(|e| zbus::fdo::Error::Failed(format!("erreur load XDP: {e}")))?;
-        program.attach(interface, aya::programs::xdp::XdpMode::default())
-            .map_err(|e| zbus::fdo::Error::Failed(format!("erreur attach XDP sur {interface}: {e}")))?;
+        program
+            .load()
+            .map_err(|e| zbus::fdo::Error::Failed(format!("erreur load XDP: {e}")))?;
+        program
+            .attach(interface, aya::programs::xdp::XdpMode::default())
+            .map_err(|e| {
+                zbus::fdo::Error::Failed(format!("erreur attach XDP sur {interface}: {e}"))
+            })?;
 
         // 4. Configurer la PerfEventArray
-        let events_map = ebpf.take_map("EVENTS")
+        let events_map = ebpf
+            .take_map("EVENTS")
             .ok_or_else(|| zbus::fdo::Error::Failed("map EVENTS introuvable".into()))?;
         let mut perf_array = PerfEventArray::try_from(events_map)
             .map_err(|e| zbus::fdo::Error::Failed(format!("erreur map EVENTS: {e}")))?;
@@ -76,7 +82,8 @@ impl CaptureService {
         for cpu_id in online_cpus()
             .map_err(|e| zbus::fdo::Error::Failed(format!("erreur online cpus: {:?}", e)))?
         {
-            let buf = perf_array.open(cpu_id, None)
+            let buf = perf_array
+                .open(cpu_id, None)
                 .map_err(|e| zbus::fdo::Error::Failed(format!("erreur open perf array: {e}")))?;
 
             let conn_clone = connection.clone();
@@ -113,7 +120,8 @@ impl CaptureService {
                             data[..head_len].copy_from_slice(&head[..head_len]);
                             if head_len < data.len() {
                                 let tail_len = (data.len() - head_len).min(tail.len());
-                                data[head_len..head_len+tail_len].copy_from_slice(&tail[..tail_len]);
+                                data[head_len..head_len + tail_len]
+                                    .copy_from_slice(&tail[..tail_len]);
                             }
 
                             let ptr = data.as_ptr() as *const PacketLog;
@@ -126,7 +134,8 @@ impl CaptureService {
                                 timestamp_ms: std::time::SystemTime::now()
                                     .duration_since(std::time::UNIX_EPOCH)
                                     .unwrap_or_default()
-                                    .as_millis() as u64,
+                                    .as_millis()
+                                    as u64,
                                 src_ip: src,
                                 dst_ip: dst,
                                 protocol: match log.protocol {
@@ -145,7 +154,10 @@ impl CaptureService {
                             // Donc on le spawn dans tokio.
                             let signal_ctxt = signal_ctxt.clone();
                             tokio::spawn(async move {
-                                if let Err(e) = CaptureService::packet_captured(&signal_ctxt, captured_packet).await {
+                                if let Err(e) =
+                                    CaptureService::packet_captured(&signal_ctxt, captured_packet)
+                                        .await
+                                {
                                     tracing::error!("Erreur émission signal D-Bus: {e}");
                                 }
                             });
@@ -195,10 +207,16 @@ async fn main() -> Result<()> {
         connection: connection.clone(),
     };
 
-    connection.object_server().at(CAPTURE_OBJECT_PATH, service).await?;
+    connection
+        .object_server()
+        .at(CAPTURE_OBJECT_PATH, service)
+        .await?;
     connection.request_name(CAPTURE_BUS_NAME).await?;
 
-    tracing::info!(bus = CAPTURE_BUS_NAME, "netsentinel-captured prêt (eBPF activé)");
+    tracing::info!(
+        bus = CAPTURE_BUS_NAME,
+        "netsentinel-captured prêt (eBPF activé)"
+    );
     std::future::pending::<()>().await;
     Ok(())
 }

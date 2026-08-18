@@ -1,4 +1,4 @@
-pub mod discover;
 pub mod capture;
-pub mod scan;
+pub mod discover;
 pub mod intercept;
+pub mod scan;

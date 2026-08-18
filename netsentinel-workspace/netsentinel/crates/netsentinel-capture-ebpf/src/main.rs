@@ -8,13 +8,13 @@ use aya_ebpf::{
     programs::XdpContext,
 };
 use core::mem;
+use netsentinel_capture_common::PacketLog;
 use network_types::{
     eth::{EthHdr, EtherType},
     ip::{IpProto, Ipv4Hdr},
     tcp::TcpHdr,
     udp::UdpHdr,
 };
-use netsentinel_capture_common::PacketLog;
 
 #[map]
 static EVENTS: PerfEventArray<PacketLog> = PerfEventArray::new(0);
@@ -51,7 +51,7 @@ fn try_netsentinel_capture_ebpf(ctx: XdpContext) -> Result<u32, ()> {
     let src_addr = u32::from_be(unsafe { (*ipv4hdr).src_addr });
     let dst_addr = u32::from_be(unsafe { (*ipv4hdr).dst_addr });
     let protocol = unsafe { (*ipv4hdr).proto } as u8;
-    
+
     // Simplification for length
     let length = (ctx.data_end() - ctx.data()) as u32;
 

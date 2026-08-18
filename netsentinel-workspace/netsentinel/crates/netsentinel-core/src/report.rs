@@ -24,10 +24,19 @@ impl ReportGenerator {
         let mut md = String::new();
         let now = Utc::now().to_rfc3339();
 
-        md.push_str(&format!("# Rapport de Sécurité NetSentinel — {}\n\n", title));
+        md.push_str(&format!(
+            "# Rapport de Sécurité NetSentinel — {}\n\n",
+            title
+        ));
         md.push_str(&format!("**Généré le :** {}\n", now));
-        md.push_str(&format!("**Total des vulnérabilités identifiées :** {}\n", findings.len()));
-        md.push_str(&format!("**Total des événements d'audit :** {}\n\n", ledger_entries.len()));
+        md.push_str(&format!(
+            "**Total des vulnérabilités identifiées :** {}\n",
+            findings.len()
+        ));
+        md.push_str(&format!(
+            "**Total des événements d'audit :** {}\n\n",
+            ledger_entries.len()
+        ));
 
         md.push_str("---\n\n");
         md.push_str("## 1. Vulnérabilités Identifiées\n\n");
@@ -110,11 +119,16 @@ impl ReportGenerator {
         html.push_str("th, td { border: 1px solid #334155; padding: 12px; text-align: left; }\n");
         html.push_str("th { background: #1e293b; color: #f1f5f9; }\n");
         html.push_str("tr:nth-child(even) { background: #1e293b; }\n");
-        html.push_str("code { background: #0284c7; padding: 2px 6px; border-radius: 4px; color: #fff; }\n");
+        html.push_str(
+            "code { background: #0284c7; padding: 2px 6px; border-radius: 4px; color: #fff; }\n",
+        );
         html.push_str(".badge-critical { background: #ef4444; padding: 4px 8px; border-radius: 4px; font-weight: bold; }\n");
         html.push_str("</style>\n</head>\n<body>\n");
 
-        html.push_str(&format!("<h1>Rapport de Sécurité NetSentinel — {}</h1>\n", title));
+        html.push_str(&format!(
+            "<h1>Rapport de Sécurité NetSentinel — {}</h1>\n",
+            title
+        ));
         html.push_str(&format!("<p><strong>Généré le :</strong> {}</p>\n", now));
 
         html.push_str("<h2>1. Vulnérabilités Identifiées</h2>\n");

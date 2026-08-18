@@ -87,7 +87,9 @@ impl InterceptService {
     ) -> zbus::fdo::Result<bool> {
         if authorization_token != self.expected_token {
             warn!(%target_ip, "Tentative session — jeton invalide (RE-01)");
-            let _ = self.audit_logger.log_action("AUTH_TOKEN_REJECTED", target_ip, operator);
+            let _ = self
+                .audit_logger
+                .log_action("AUTH_TOKEN_REJECTED", target_ip, operator);
             return Ok(false);
         }
 
@@ -125,9 +127,11 @@ impl InterceptService {
             if let Err(e) = stop_intercept(&rt.params, rt.previous_ip_forward.as_deref()) {
                 error!("Cleanup session erreur: {e}");
             }
-            let _ = self
-                .audit_logger
-                .log_action("SESSION_ENDED", &rt.params.victim_ip.to_string(), "system");
+            let _ = self.audit_logger.log_action(
+                "SESSION_ENDED",
+                &rt.params.victim_ip.to_string(),
+                "system",
+            );
         }
         Ok(())
     }
@@ -198,11 +202,17 @@ async fn start_intercept(
     let arp_loop_handle = tokio::task::spawn_blocking(move || {
         let iface = match find_interface_by_name(&iface_name_spawn) {
             Ok(i) => i,
-            Err(e) => { error!("ARP loop: {e}"); return }
+            Err(e) => {
+                error!("ARP loop: {e}");
+                return;
+            }
         };
         let (mut tx, _rx) = match open_datalink(&iface) {
             Ok(c) => c,
-            Err(e) => { error!("ARP loop open: {e}"); return }
+            Err(e) => {
+                error!("ARP loop open: {e}");
+                return;
+            }
         };
         let start = std::time::Instant::now();
         loop {
@@ -379,8 +389,10 @@ fn find_own_ipv4_on(iface: &NetworkInterface) -> Option<Ipv4Addr> {
 
 fn open_datalink(
     iface: &NetworkInterface,
-) -> Result<(Box<dyn pnet::datalink::DataLinkSender>, Box<dyn pnet::datalink::DataLinkReceiver>)>
-{
+) -> Result<(
+    Box<dyn pnet::datalink::DataLinkSender>,
+    Box<dyn pnet::datalink::DataLinkReceiver>,
+)> {
     match datalink::channel(iface, Default::default())? {
         Channel::Ethernet(tx, rx) => Ok((tx, rx)),
         _ => bail!("Canal non Ethernet non supporté"),
@@ -396,7 +408,8 @@ fn resolve_mac_arp_blocking(
     let (mut tx, mut rx) = open_datalink(iface)?;
 
     // Envoi ARP Request
-    let req = build_arp_request(own_mac, own_ip, target_ip).ok_or_else(|| anyhow!("Erreur création paquet ARP Request"))?;
+    let req = build_arp_request(own_mac, own_ip, target_ip)
+        .ok_or_else(|| anyhow!("Erreur création paquet ARP Request"))?;
     let _ = tx
         .send_to(&req, None)
         .ok_or_else(|| anyhow!("send_to ARP request indisponible"))?;
@@ -494,9 +507,7 @@ async fn main() -> Result<()> {
         .init();
 
     let expected_token = std::env::var("NETSENTINEL_AUTH_TOKEN").unwrap_or_else(|_| {
-        warn!(
-            "NETSENTINEL_AUTH_TOKEN absent — fallback dummy_token. NE JAMAIS UTILISER EN PROD !"
-        );
+        warn!("NETSENTINEL_AUTH_TOKEN absent — fallback dummy_token. NE JAMAIS UTILISER EN PROD !");
         "dummy_token".to_string()
     });
     let audit_secret = std::env::var("NETSENTINEL_AUDIT_SECRET")

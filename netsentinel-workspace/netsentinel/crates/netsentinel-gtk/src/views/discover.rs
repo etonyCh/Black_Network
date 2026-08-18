@@ -18,7 +18,7 @@ pub fn build_page() -> GtkBox {
         .halign(Align::Start)
         .css_classes(vec!["title-1".to_string()])
         .build();
-    
+
     let description = Label::builder()
         .label("Analysez votre réseau local pour découvrir les appareils connectés.")
         .halign(Align::Start)
@@ -34,7 +34,7 @@ pub fn build_page() -> GtkBox {
         .text("eth0")
         .build();
     config_group.add(&interface_entry);
-    
+
     container.append(&config_group);
 
     let action_box = GtkBox::builder()
@@ -47,7 +47,7 @@ pub fn build_page() -> GtkBox {
         .label("Lancer le scan")
         .css_classes(vec!["suggested-action".to_string()])
         .build();
-    
+
     let spinner = Spinner::builder().build();
 
     action_box.append(&scan_button);
@@ -58,18 +58,24 @@ pub fn build_page() -> GtkBox {
         .selection_mode(gtk::SelectionMode::None)
         .css_classes(vec!["boxed-list".to_string()])
         .build();
-    
+
     let results_container = GtkBox::builder()
         .orientation(Orientation::Vertical)
         .spacing(12)
         .build();
-    results_container.append(&Label::builder().label("<b>Résultats</b>").use_markup(true).halign(Align::Start).build());
+    results_container.append(
+        &Label::builder()
+            .label("<b>Résultats</b>")
+            .use_markup(true)
+            .halign(Align::Start)
+            .build(),
+    );
     results_container.append(&results_group);
 
     container.append(&results_container);
 
     let results_group_clone = results_group.clone();
-    
+
     scan_button.connect_clicked(move |btn| {
         let iface = interface_entry.text().to_string();
         let spinner_clone = spinner.clone();
@@ -91,18 +97,25 @@ pub fn build_page() -> GtkBox {
                     for host in hosts {
                         let row = ActionRow::builder()
                             .title(host.ip.clone())
-                            .subtitle(format!("MAC: {} | Vendor: {} | Hostname: {}", 
-                                host.mac, 
-                                if host.vendor.is_empty() { "Inconnu" } else { &host.vendor },
-                                if host.hostname.is_empty() { "Inconnu" } else { &host.hostname }
+                            .subtitle(format!(
+                                "MAC: {} | Vendor: {} | Hostname: {}",
+                                host.mac,
+                                if host.vendor.is_empty() {
+                                    "Inconnu"
+                                } else {
+                                    &host.vendor
+                                },
+                                if host.hostname.is_empty() {
+                                    "Inconnu"
+                                } else {
+                                    &host.hostname
+                                }
                             ))
                             .build();
                         results.append(&row);
                     }
                     if is_empty {
-                        let row = ActionRow::builder()
-                            .title("Aucun appareil trouvé")
-                            .build();
+                        let row = ActionRow::builder().title("Aucun appareil trouvé").build();
                         results.append(&row);
                     }
                 }
@@ -122,7 +135,9 @@ pub fn build_page() -> GtkBox {
     container
 }
 
-async fn run_discovery_scan(interface: &str) -> anyhow::Result<Vec<netsentinel_proto::DiscoveredHost>> {
+async fn run_discovery_scan(
+    interface: &str,
+) -> anyhow::Result<Vec<netsentinel_proto::DiscoveredHost>> {
     let connection = zbus::Connection::system().await?;
     let proxy = netsentinel_proto::Discover1Proxy::new(&connection).await?;
     let hosts = proxy.scan(interface, 5000).await?;

@@ -1,8 +1,8 @@
+use ipnet::IpNet;
+use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
 use std::str::FromStr;
 use std::time::{SystemTime, UNIX_EPOCH};
-use ipnet::IpNet;
-use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
@@ -142,9 +142,10 @@ impl PDDLResult {
 
     pub fn to_ledger_columns(&self) -> (&'static str, Option<String>) {
         let status_str = self.status.as_str();
-        let violation = self.rule_violation.as_ref().map(|v| {
-            format!("{}: {}", self.rule_name.as_deref().unwrap_or("?"), v)
-        });
+        let violation = self
+            .rule_violation
+            .as_ref()
+            .map(|v| format!("{}: {}", self.rule_name.as_deref().unwrap_or("?"), v));
         (status_str, violation)
     }
 }
@@ -167,7 +168,8 @@ impl PDDLRule for RE01ConsentRule {
     fn evaluate(&self, action: &PDDLAction, ctx: &PDDLContext) -> PDDLResult {
         if !action.requires_consent {
             let mut res = PDDLResult::compliant(self.id());
-            res.messages.push("Aucun consentement requis pour cette action.".to_string());
+            res.messages
+                .push("Aucun consentement requis pour cette action.".to_string());
             return res;
         }
 
@@ -185,7 +187,10 @@ impl PDDLRule for RE01ConsentRule {
             );
         }
 
-        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs_f64();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs_f64();
         if let Some(ts) = ctx.consent_timestamp {
             if ts > now {
                 return PDDLResult::non_compliant(
@@ -247,7 +252,8 @@ impl PDDLRule for RE02ScopeRule {
     fn evaluate(&self, action: &PDDLAction, ctx: &PDDLContext) -> PDDLResult {
         if !action.requires_scope {
             let mut res = PDDLResult::compliant(self.id());
-            res.messages.push("Action sans cible réseau : périmètre non applicable.".to_string());
+            res.messages
+                .push("Action sans cible réseau : périmètre non applicable.".to_string());
             return res;
         }
 
@@ -325,7 +331,10 @@ impl PDDLRule for RE02TimeoutRule {
             ActionType::Capture | ActionType::Scan | ActionType::InterceptStart
         ) {
             if let Some(started_at) = ctx.session_started_at {
-                let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs_f64();
+                let now = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs_f64();
                 let elapsed = (now - started_at).max(0.0);
                 if elapsed > ctx.max_session_duration_seconds as f64 {
                     return PDDLResult::non_compliant(
@@ -380,7 +389,10 @@ impl PDDLEngine {
 
         for rule in &self.rules {
             let res = rule.evaluate(action, ctx);
-            per_rule_status.insert(rule.id().to_string(), serde_json::json!(res.status.as_str()));
+            per_rule_status.insert(
+                rule.id().to_string(),
+                serde_json::json!(res.status.as_str()),
+            );
 
             if res.status.is_worse_than(worst_status) {
                 worst_status = res.status;

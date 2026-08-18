@@ -125,7 +125,11 @@ impl VulnScanner {
             }
         }
 
-        let regex_patterns: Vec<&str> = scanner.profiles.iter().map(|(p, _)| p.regex.as_str()).collect();
+        let regex_patterns: Vec<&str> = scanner
+            .profiles
+            .iter()
+            .map(|(p, _)| p.regex.as_str())
+            .collect();
         if let Ok(set) = RegexSet::new(&regex_patterns) {
             scanner.regex_set = Some(set);
         }
@@ -138,8 +142,12 @@ impl VulnScanner {
         strict: bool,
         expected_sha256: &str,
     ) -> Result<Self> {
-        let content = std::fs::read_to_string(path.as_ref())
-            .with_context(|| format!("Impossible de lire le fichier vuln_database : {:?}", path.as_ref()))?;
+        let content = std::fs::read_to_string(path.as_ref()).with_context(|| {
+            format!(
+                "Impossible de lire le fichier vuln_database : {:?}",
+                path.as_ref()
+            )
+        })?;
         Self::load_from_json_string(&content, strict, expected_sha256)
     }
 
@@ -178,11 +186,7 @@ impl VulnScanner {
         findings
     }
 
-    pub async fn grab_banner(
-        target: &str,
-        port: u16,
-        timeout: Duration,
-    ) -> Result<String> {
+    pub async fn grab_banner(target: &str, port: u16, timeout: Duration) -> Result<String> {
         let addr = format!("{}:{}", target, port);
         let mut stream = tokio::time::timeout(timeout, TcpStream::connect(&addr))
             .await
@@ -250,7 +254,7 @@ mod tests {
     #[test]
     fn test_vuln_scanner_regex_matching() -> Result<()> {
         let scanner = VulnScanner::load_from_json_string(SAMPLE_DB_JSON, false, "")?;
-        
+
         // Test OpenSSH regreSSHion match
         let findings = scanner.audit_banner("SSH-2.0-OpenSSH_8.9p1 Ubuntu-3ubuntu0.1");
         assert_eq!(findings.len(), 1);
@@ -266,8 +270,15 @@ mod tests {
 
     #[test]
     fn test_sha256_strict_integrity_rejection() {
-        let err = VulnScanner::load_from_json_string(SAMPLE_DB_JSON, true, "0000000000000000000000000000000000000000000000000000000000000000");
+        let err = VulnScanner::load_from_json_string(
+            SAMPLE_DB_JSON,
+            true,
+            "0000000000000000000000000000000000000000000000000000000000000000",
+        );
         assert!(err.is_err());
-        assert!(err.unwrap_err().to_string().contains("intégrité SHA256 violée"));
+        assert!(err
+            .unwrap_err()
+            .to_string()
+            .contains("intégrité SHA256 violée"));
     }
 }

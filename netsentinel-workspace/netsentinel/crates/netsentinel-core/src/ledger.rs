@@ -1,9 +1,9 @@
 use anyhow::{anyhow, Context, Result};
 use chrono::Utc;
 use rusqlite::{params, Connection};
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::path::Path;
-use serde::{Deserialize, Serialize};
 
 use crate::pddl::{PDDLAction, PDDLContext, PDDLEngine, PDDLResult, PDDLStatus};
 
@@ -47,8 +47,8 @@ impl AuditLedger {
     }
 
     pub fn in_memory() -> Result<Self> {
-        let conn = Connection::open_in_memory()
-            .context("Échec ouverture SQLite ledger in-memory")?;
+        let conn =
+            Connection::open_in_memory().context("Échec ouverture SQLite ledger in-memory")?;
         let ledger = Self {
             conn: Mutex::new(conn),
             pddl_engine: PDDLEngine::default_rules(),
@@ -63,7 +63,10 @@ impl AuditLedger {
     }
 
     fn init_db(&self) -> Result<()> {
-        let conn = self.conn.lock().map_err(|e| anyhow!("Lock poison error: {}", e))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| anyhow!("Lock poison error: {}", e))?;
         conn.execute_batch(
             "PRAGMA journal_mode = WAL;
              PRAGMA synchronous = NORMAL;
@@ -116,7 +119,10 @@ impl AuditLedger {
         output_data: Option<&str>,
         pddl_rule_violation: Option<&str>,
     ) -> Result<String> {
-        let conn = self.conn.lock().map_err(|e| anyhow!("Lock poison error: {}", e))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| anyhow!("Lock poison error: {}", e))?;
         let timestamp = Utc::now().to_rfc3339();
 
         let content = serde_json::json!({
@@ -175,7 +181,9 @@ impl AuditLedger {
             .clone()
             .unwrap_or_else(|| format!("{:?}", action.action_type));
 
-        if deny_non_compliant && matches!(result.status, PDDLStatus::NonCompliant | PDDLStatus::Error) {
+        if deny_non_compliant
+            && matches!(result.status, PDDLStatus::NonCompliant | PDDLStatus::Error)
+        {
             return Err(anyhow!(
                 "[PDDL {}] {}: {} — détails: {}",
                 status_str,
@@ -199,7 +207,10 @@ impl AuditLedger {
     }
 
     pub fn verify_integrity(&self) -> Result<(bool, Option<i64>)> {
-        let conn = self.conn.lock().map_err(|e| anyhow!("Lock poison error: {}", e))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| anyhow!("Lock poison error: {}", e))?;
         let mut stmt = conn.prepare(
             "SELECT id, timestamp, agent_id, model_version, action,
                     input_data, output_data, pddl_status, pddl_rule_violation,
@@ -267,7 +278,10 @@ impl AuditLedger {
     }
 
     pub fn export_ledger(&self) -> Result<Vec<AuditEntry>> {
-        let conn = self.conn.lock().map_err(|e| anyhow!("Lock poison error: {}", e))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| anyhow!("Lock poison error: {}", e))?;
         let mut stmt = conn.prepare("SELECT * FROM audit_log ORDER BY id ASC")?;
         let entries = stmt
             .query_map([], |row| {
@@ -301,7 +315,15 @@ mod tests {
         let h1 = ledger.append("SCAN", "COMPLIANT", Some("agent-1"), None, None, None, None)?;
         assert_eq!(h1.len(), 64);
 
-        let h2 = ledger.append("CAPTURE", "COMPLIANT", Some("agent-1"), None, None, None, None)?;
+        let h2 = ledger.append(
+            "CAPTURE",
+            "COMPLIANT",
+            Some("agent-1"),
+            None,
+            None,
+            None,
+            None,
+        )?;
         assert_eq!(h2.len(), 64);
         assert_ne!(h1, h2);
 
