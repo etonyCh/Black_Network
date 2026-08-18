@@ -118,7 +118,7 @@ jobs:
       - name: Install System Build Deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends build-essential curl ca-certificates libgtk-4-dev libadwaita-1-dev libglib2.0-dev libpango1.0-dev libcairo2-dev libssl-dev pkg-config clang llvm dbus polkitd apparmor libcap2-bin systemd debhelper-compat dpkg-dev
+          sudo apt-get install -y --no-install-recommends build-essential curl ca-certificates libgtk-4-dev libadwaita-1-dev libglib2.0-dev libpango1.0-dev libcairo2-dev libssl-dev pkg-config clang llvm llvm-dev libclang-dev dbus polkitd apparmor libcap2-bin systemd debhelper-compat dpkg-dev
 
       - name: Install Rust stable & nightly
         run: |
@@ -128,8 +128,10 @@ jobs:
           rustup toolchain install nightly-x86_64-unknown-linux-gnu --profile minimal --component rust-src,llvm-tools-preview
           rustup default stable
 
-      - name: Install bpf-linker
-        run: cargo install bpf-linker --locked --no-track
+      - name: Install bpf-linker (prebuilt binary via cargo-binstall)
+        run: |
+          curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
+          cargo binstall -y bpf-linker
 
       - name: Cargo build release bins
         working-directory: netsentinel-workspace/netsentinel
