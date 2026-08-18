@@ -11,6 +11,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  AYA_BUILD_SKIP: "1"
+
 jobs:
 
   # =========================================================================
@@ -130,6 +133,8 @@ jobs:
 
       - name: Cargo build release bins
         working-directory: netsentinel-workspace/netsentinel
+        env:
+          AYA_BUILD_SKIP: ""
         run: cargo build --workspace --profile release --bins --exclude netsentinel-capture-ebpf
 
       - name: Assemble .deb staging dir

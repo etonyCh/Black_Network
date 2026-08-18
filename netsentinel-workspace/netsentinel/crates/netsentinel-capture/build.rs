@@ -2,6 +2,10 @@ use anyhow::{anyhow, Context as _};
 use aya_build::Toolchain;
 
 fn main() -> anyhow::Result<()> {
+    println!("cargo:rerun-if-env-changed=AYA_BUILD_SKIP");
+    if std::env::var("AYA_BUILD_SKIP").is_ok() {
+        return Ok(());
+    }
     let cargo_metadata::Metadata { packages, .. } = cargo_metadata::MetadataCommand::new()
         .no_deps()
         .exec()
