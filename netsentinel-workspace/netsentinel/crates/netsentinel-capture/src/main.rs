@@ -223,15 +223,11 @@ impl CaptureService {
                     .lock()
                     .await
                     .finalize()
-                    .map_err(|e| {
-                        zbus::fdo::Error::Failed(format!("erreur finalize PCAP: {e}"))
-                    })?;
+                    .map_err(|e| zbus::fdo::Error::Failed(format!("erreur finalize PCAP: {e}")))?;
                 tracing::info!(path = %path, packets = count, "capture arrêtée, PCAP finalisé");
                 Ok(path)
             }
-            None => Err(zbus::fdo::Error::Failed(
-                "aucune capture en cours".into(),
-            )),
+            None => Err(zbus::fdo::Error::Failed("aucune capture en cours".into())),
         }
     }
 

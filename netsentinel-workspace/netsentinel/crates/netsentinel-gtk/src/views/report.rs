@@ -128,7 +128,11 @@ pub fn build_page(state: &SharedState) -> GtkBox {
 
         if let Ok(Some(session)) = state_for_status.session_manager.get_active_session() {
             if let Ok(findings) = state_for_status.session_manager.get_findings(session.id) {
-                parts.push(format!("{} findings en session #{}", findings.len(), session.id));
+                parts.push(format!(
+                    "{} findings en session #{}",
+                    findings.len(),
+                    session.id
+                ));
             }
             if let Ok(hosts) = state_for_status.session_manager.get_hosts(session.id) {
                 parts.push(format!("{} hôtes découverts", hosts.len()));
@@ -143,7 +147,8 @@ pub fn build_page(state: &SharedState) -> GtkBox {
         data_status_clone.set_markup(&format!(
             "<b>Données disponibles:</b> {}",
             if parts.is_empty() {
-                "aucune session active — le rapport utilisera des données de démonstration.".to_string()
+                "aucune session active — le rapport utilisera des données de démonstration."
+                    .to_string()
             } else {
                 parts.join(" · ")
             }
@@ -219,9 +224,7 @@ pub fn build_page(state: &SharedState) -> GtkBox {
 
 use std::sync::Arc;
 
-fn collect_report_data(
-    state: &SharedState,
-) -> (Vec<VulnFinding>, Vec<AuditEntry>) {
+fn collect_report_data(state: &SharedState) -> (Vec<VulnFinding>, Vec<AuditEntry>) {
     let findings = if let Ok(Some(session)) = state.session_manager.get_active_session() {
         state
             .session_manager

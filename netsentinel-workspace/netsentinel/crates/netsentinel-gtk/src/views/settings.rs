@@ -135,7 +135,9 @@ pub fn build_page(state: &SharedState) -> GtkBox {
             session.id,
             glib::markup_escape_text(&session.title)
         ));
-        if let Ok(scope) = serde_json::from_str::<netsentinel_core::SessionScope>(&session.scope_json) {
+        if let Ok(scope) =
+            serde_json::from_str::<netsentinel_core::SessionScope>(&session.scope_json)
+        {
             scope_display.set_markup(&format!(
                 "<b>Périmètre RE-02:</b> {}",
                 glib::markup_escape_text(&scope.targets.join(", "))
@@ -156,10 +158,7 @@ pub fn build_page(state: &SharedState) -> GtkBox {
         .build();
     container.append(&save_button);
 
-    let status_label = Label::builder()
-        .label("")
-        .halign(Align::Start)
-        .build();
+    let status_label = Label::builder().label("").halign(Align::Start).build();
     container.append(&status_label);
 
     let state_clone = Arc::clone(state);
@@ -180,15 +179,12 @@ pub fn build_page(state: &SharedState) -> GtkBox {
         };
         match state_clone.session_manager.save_settings(&settings) {
             Ok(()) => {
-                status_clone.set_markup(
-                    "<span foreground='#26a269'>✅ Configuration sauvegardée.</span>",
-                );
+                status_clone
+                    .set_markup("<span foreground='#26a269'>✅ Configuration sauvegardée.</span>");
             }
             Err(e) => {
-                status_clone.set_markup(&format!(
-                    "<span foreground='red'>❌ Erreur : {}</span>",
-                    e
-                ));
+                status_clone
+                    .set_markup(&format!("<span foreground='red'>❌ Erreur : {}</span>", e));
             }
         }
     });

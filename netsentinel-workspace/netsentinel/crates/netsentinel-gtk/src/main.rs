@@ -49,11 +49,7 @@ fn build_ui(app: &Application) {
         Some("capture"),
         "Capture",
     );
-    content_stack.add_titled(
-        &views::scan::build_page(&state),
-        Some("scan"),
-        "Audit",
-    );
+    content_stack.add_titled(&views::scan::build_page(&state), Some("scan"), "Audit");
     content_stack.add_titled(
         &views::intercept::build_page(&state),
         Some("intercept"),

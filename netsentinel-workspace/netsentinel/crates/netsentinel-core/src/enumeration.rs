@@ -109,7 +109,8 @@ impl DnsEnumerator {
         Self::new("8.8.8.8", 3000)
     }
 
-    fn build_query(domain: &str, record_type: &DnsRecordType) -> Vec<u8> {        let mut query = Vec::with_capacity(512);
+    fn build_query(domain: &str, record_type: &DnsRecordType) -> Vec<u8> {
+        let mut query = Vec::with_capacity(512);
 
         // Transaction ID
         let tx_id: u16 = 0x1234;
@@ -195,10 +196,7 @@ impl DnsEnumerator {
             match rtype {
                 1 if rdlength == 4 => {
                     // A record
-                    let ip = format!(
-                        "{}.{}.{}.{}",
-                        rdata[0], rdata[1], rdata[2], rdata[3]
-                    );
+                    let ip = format!("{}.{}.{}.{}", rdata[0], rdata[1], rdata[2], rdata[3]);
                     results.push((record_type.as_str().to_string(), ttl, ip));
                 }
                 28 if rdlength == 16 => {
@@ -212,14 +210,9 @@ impl DnsEnumerator {
                 }
                 15 if rdlength >= 3 => {
                     // MX record
-                    let preference =
-                        u16::from_be_bytes([rdata[0], rdata[1]]);
+                    let preference = u16::from_be_bytes([rdata[0], rdata[1]]);
                     let exchange = Self::parse_name(data, offset);
-                    results.push((
-                        "MX".to_string(),
-                        ttl,
-                        format!("{preference} {exchange}"),
-                    ));
+                    results.push(("MX".to_string(), ttl, format!("{preference} {exchange}")));
                 }
                 2 => {
                     // NS record
@@ -242,9 +235,7 @@ impl DnsEnumerator {
                             if !txt.is_empty() {
                                 txt.push(' ');
                             }
-                            txt.push_str(
-                                &String::from_utf8_lossy(&rdata[i..i + len]),
-                            );
+                            txt.push_str(&String::from_utf8_lossy(&rdata[i..i + len]));
                         }
                         i += len;
                     }
@@ -315,11 +306,7 @@ impl DnsEnumerator {
         name
     }
 
-    pub async fn query(
-        &self,
-        domain: &str,
-        record_type: &DnsRecordType,
-    ) -> Result<Vec<DnsResult>> {
+    pub async fn query(&self, domain: &str, record_type: &DnsRecordType) -> Result<Vec<DnsResult>> {
         let sock = UdpSocket::bind("0.0.0.0:0")
             .await
             .context("bind UDP pour DNS")?;
@@ -384,11 +371,7 @@ impl SubdomainBruter {
         Self::new(DnsEnumerator::default_resolver(), 20)
     }
 
-    pub async fn brute(
-        &self,
-        domain: &str,
-        wordlist: &[String],
-    ) -> Vec<SubdomainResult> {
+    pub async fn brute(&self, domain: &str, wordlist: &[String]) -> Vec<SubdomainResult> {
         use futures::stream::{self, StreamExt};
 
         let domain = domain.to_string();
@@ -403,8 +386,7 @@ impl SubdomainBruter {
                     let fqdn = format!("{sub}.{domain}");
                     match dns.query(&fqdn, &DnsRecordType::A).await {
                         Ok(records) if !records.is_empty() => {
-                            let ips: Vec<String> =
-                                records.into_iter().map(|r| r.value).collect();
+                            let ips: Vec<String> = records.into_iter().map(|r| r.value).collect();
                             SubdomainResult {
                                 subdomain: fqdn,
                                 ip_addresses: ips,
@@ -426,33 +408,124 @@ impl SubdomainBruter {
         results
     }
 
-    pub async fn brute_top(
-        &self,
-        domain: &str,
-    ) -> Vec<SubdomainResult> {
+    pub async fn brute_top(&self, domain: &str) -> Vec<SubdomainResult> {
         let wordlist = Self::default_wordlist();
         self.brute(domain, &wordlist).await
     }
 
     fn default_wordlist() -> Vec<String> {
         vec![
-            "www", "mail", "ftp", "smtp", "pop", "imap", "ns1", "ns2",
-            "dns", "mx", "mx1", "mx2", "webmail", "email", "vpn", "proxy",
-            "api", "dev", "staging", "test", "beta", "alpha", "admin",
-            "portal", "login", "app", "cdn", "static", "media", "images",
-            "blog", "news", "forum", "wiki", "docs", "support", "help",
-            "shop", "store", "pay", "billing", "status", "monitor",
-            "grafana", "prometheus", "jenkins", "ci", "cd", "git", "gitlab",
-            "github", "bitbucket", "jira", "confluence", "sonarqube",
-            "db", "database", "mysql", "postgres", "mongo", "redis", "elastic",
-            "kibana", "logstash", "kafka", "rabbitmq", "nats",
-            "k8s", "kubernetes", "docker", "registry", "harbor",
-            "minio", "s3", "aws", "gcp", "azure", "cloud",
-            "auth", "sso", "oauth", "ldap", "radius", "cert", "ca",
-            "owa", "exchange", "sharepoint", "teams", "slack", "discord",
-            "ipa", "freeipa", "zyxel", "unifi", "mikrotik", "pfsense",
-            "router", "switch", "ap", "wifi", "iot", "cam", "camera",
-            "nas", "backup", "archive", "log", "logs", "syslog", "ntp",
+            "www",
+            "mail",
+            "ftp",
+            "smtp",
+            "pop",
+            "imap",
+            "ns1",
+            "ns2",
+            "dns",
+            "mx",
+            "mx1",
+            "mx2",
+            "webmail",
+            "email",
+            "vpn",
+            "proxy",
+            "api",
+            "dev",
+            "staging",
+            "test",
+            "beta",
+            "alpha",
+            "admin",
+            "portal",
+            "login",
+            "app",
+            "cdn",
+            "static",
+            "media",
+            "images",
+            "blog",
+            "news",
+            "forum",
+            "wiki",
+            "docs",
+            "support",
+            "help",
+            "shop",
+            "store",
+            "pay",
+            "billing",
+            "status",
+            "monitor",
+            "grafana",
+            "prometheus",
+            "jenkins",
+            "ci",
+            "cd",
+            "git",
+            "gitlab",
+            "github",
+            "bitbucket",
+            "jira",
+            "confluence",
+            "sonarqube",
+            "db",
+            "database",
+            "mysql",
+            "postgres",
+            "mongo",
+            "redis",
+            "elastic",
+            "kibana",
+            "logstash",
+            "kafka",
+            "rabbitmq",
+            "nats",
+            "k8s",
+            "kubernetes",
+            "docker",
+            "registry",
+            "harbor",
+            "minio",
+            "s3",
+            "aws",
+            "gcp",
+            "azure",
+            "cloud",
+            "auth",
+            "sso",
+            "oauth",
+            "ldap",
+            "radius",
+            "cert",
+            "ca",
+            "owa",
+            "exchange",
+            "sharepoint",
+            "teams",
+            "slack",
+            "discord",
+            "ipa",
+            "freeipa",
+            "zyxel",
+            "unifi",
+            "mikrotik",
+            "pfsense",
+            "router",
+            "switch",
+            "ap",
+            "wifi",
+            "iot",
+            "cam",
+            "camera",
+            "nas",
+            "backup",
+            "archive",
+            "log",
+            "logs",
+            "syslog",
+            "ntp",
         ]
         .into_iter()
         .map(String::from)
@@ -545,29 +618,112 @@ impl DirectoryBruter {
 
     pub fn default_wordlist() -> Vec<String> {
         vec![
-            "admin", "administrator", "login", "wp-admin", "wp-login.php",
-            "phpmyadmin", "phpMyAdmin", "pma", "server-status", "server-info",
-            "robots.txt", "sitemap.xml", ".env", ".git", ".git/config",
-            ".git/HEAD", ".gitignore", ".htaccess", ".htpasswd", ".DS_Store",
-            "backup", "backups", "db", "database", "dump", "export", "import",
-            "config", "configuration", "settings", "setup", "install",
-            "api", "api/v1", "api/v2", "graphql", "swagger", "docs",
-            "static", "assets", "css", "js", "images", "img", "media",
-            "uploads", "upload", "files", "download", "downloads",
-            "test", "tests", "testing", "staging", "dev", "development",
-            "debug", "trace", "status", "health", "healthz", "ready", "readyz",
-            "info", "version", "metrics", "prometheus",
-            "cgi-bin", "bin", "sh", "bash", "exec", "cmd", "shell",
-            "console", "dashboard", "panel", "manager",
-            "robots.txt", ".well-known/security.txt", "favicon.ico",
-            "crossdomain.xml", "clientaccesspolicy.xml",
-            "elmah.axd", "trace.axd", "web.config", "config.xml",
-            "wp-content", "wp-includes", "xmlrpc.php",
-            "Jenkins", "jenkins", "sonar", "sonarqube",
-            ".env.production", ".env.development", ".env.local",
-            "Makefile", "Dockerfile", "docker-compose.yml",
-            "package.json", "composer.json", "Gemfile",
-            "README.md", "CHANGELOG.md", "LICENSE",
+            "admin",
+            "administrator",
+            "login",
+            "wp-admin",
+            "wp-login.php",
+            "phpmyadmin",
+            "phpMyAdmin",
+            "pma",
+            "server-status",
+            "server-info",
+            "robots.txt",
+            "sitemap.xml",
+            ".env",
+            ".git",
+            ".git/config",
+            ".git/HEAD",
+            ".gitignore",
+            ".htaccess",
+            ".htpasswd",
+            ".DS_Store",
+            "backup",
+            "backups",
+            "db",
+            "database",
+            "dump",
+            "export",
+            "import",
+            "config",
+            "configuration",
+            "settings",
+            "setup",
+            "install",
+            "api",
+            "api/v1",
+            "api/v2",
+            "graphql",
+            "swagger",
+            "docs",
+            "static",
+            "assets",
+            "css",
+            "js",
+            "images",
+            "img",
+            "media",
+            "uploads",
+            "upload",
+            "files",
+            "download",
+            "downloads",
+            "test",
+            "tests",
+            "testing",
+            "staging",
+            "dev",
+            "development",
+            "debug",
+            "trace",
+            "status",
+            "health",
+            "healthz",
+            "ready",
+            "readyz",
+            "info",
+            "version",
+            "metrics",
+            "prometheus",
+            "cgi-bin",
+            "bin",
+            "sh",
+            "bash",
+            "exec",
+            "cmd",
+            "shell",
+            "console",
+            "dashboard",
+            "panel",
+            "manager",
+            "robots.txt",
+            ".well-known/security.txt",
+            "favicon.ico",
+            "crossdomain.xml",
+            "clientaccesspolicy.xml",
+            "elmah.axd",
+            "trace.axd",
+            "web.config",
+            "config.xml",
+            "wp-content",
+            "wp-includes",
+            "xmlrpc.php",
+            "Jenkins",
+            "jenkins",
+            "sonar",
+            "sonarqube",
+            ".env.production",
+            ".env.development",
+            ".env.local",
+            "Makefile",
+            "Dockerfile",
+            "docker-compose.yml",
+            "package.json",
+            "composer.json",
+            "Gemfile",
+            "README.md",
+            "CHANGELOG.md",
+            "LICENSE",
         ]
         .into_iter()
         .map(String::from)
@@ -624,9 +780,8 @@ impl Enumerator {
         let dir_wordlist = DirectoryBruter::default_wordlist();
         for sub in &found_subs {
             let url = format!("http://{sub}");
-            let dir_bruter =
-                DirectoryBruter::new(&url, self.concurrency, self.dns.timeout_ms)
-                    .with_wordlist(dir_wordlist.clone());
+            let dir_bruter = DirectoryBruter::new(&url, self.concurrency, self.dns.timeout_ms)
+                .with_wordlist(dir_wordlist.clone());
             let dirs = dir_bruter.scan(&dir_wordlist).await;
             all_dirs.extend(dirs);
         }
@@ -646,9 +801,7 @@ impl Enumerator {
         }
     }
 
-    pub fn load_wordlist_from_file(
-        path: impl AsRef<Path>,
-    ) -> Result<Vec<String>> {
+    pub fn load_wordlist_from_file(path: impl AsRef<Path>) -> Result<Vec<String>> {
         let content = std::fs::read_to_string(path.as_ref())
             .with_context(|| format!("lecture wordlist: {:?}", path.as_ref()))?;
         Ok(content

@@ -54,9 +54,7 @@ impl FuzzRunner {
         for i in 0..iterations {
             let case_start = Instant::now();
 
-            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                fuzz_fn(i)
-            }));
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| fuzz_fn(i)));
 
             if case_start.elapsed() > per_case_timeout {
                 // dépasse le budget temps — considéré comme un hang suspect
@@ -153,8 +151,8 @@ pub mod parsers {
 
     /// Fuzze audit_banner sur des banners arbitraires (pas de panic, pas de hang).
     pub fn fuzz_audit_banner(iterations: u32) -> FuzzReport {
-        let scanner = VulnScanner::load_from_json_string(VULN_DB_JSON, false, "")
-            .expect("scanner valide");
+        let scanner =
+            VulnScanner::load_from_json_string(VULN_DB_JSON, false, "").expect("scanner valide");
         FuzzRunner::run("audit_banner", iterations, Duration::from_secs(1), |i| {
             let owned_banners = vec![
                 String::new(),
@@ -245,25 +243,45 @@ mod tests {
     #[test]
     fn test_fuzz_vuln_db_json_no_panic() {
         let report = parsers::fuzz_vuln_db_json(200);
-        assert!(report.passed(), "fuzzer vuln_db : panics={} hangs={}", report.panics, report.hangs);
+        assert!(
+            report.passed(),
+            "fuzzer vuln_db : panics={} hangs={}",
+            report.panics,
+            report.hangs
+        );
     }
 
     #[test]
     fn test_fuzz_audit_banner_no_panic() {
         let report = parsers::fuzz_audit_banner(200);
-        assert!(report.passed(), "fuzzer audit_banner : panics={} hangs={}", report.panics, report.hangs);
+        assert!(
+            report.passed(),
+            "fuzzer audit_banner : panics={} hangs={}",
+            report.panics,
+            report.hangs
+        );
     }
 
     #[test]
     fn test_fuzz_dns_response_no_panic() {
         let report = parsers::fuzz_dns_response(200);
-        assert!(report.passed(), "fuzzer dns : panics={} hangs={}", report.panics, report.hangs);
+        assert!(
+            report.passed(),
+            "fuzzer dns : panics={} hangs={}",
+            report.panics,
+            report.hangs
+        );
     }
 
     #[test]
     fn test_fuzz_pcap_no_panic() {
         let report = parsers::fuzz_pcap(50);
-        assert!(report.passed(), "fuzzer pcap : panics={} hangs={}", report.panics, report.hangs);
+        assert!(
+            report.passed(),
+            "fuzzer pcap : panics={} hangs={}",
+            report.panics,
+            report.hangs
+        );
     }
 
     #[test]

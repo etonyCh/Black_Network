@@ -145,8 +145,8 @@ impl SessionManager {
             std::fs::create_dir_all(parent)
                 .with_context(|| format!(" création dossier session DB : {:?}", parent))?;
         }
-        let conn =
-            Connection::open(path).with_context(|| format!("ouverture SQLite sessions : {:?}", path))?;
+        let conn = Connection::open(path)
+            .with_context(|| format!("ouverture SQLite sessions : {:?}", path))?;
         let mgr = Self {
             conn: Mutex::new(conn),
         };
@@ -220,10 +220,7 @@ impl SessionManager {
     pub fn create_session(&self, title: &str, scope: &SessionScope) -> Result<Session> {
         let now = Utc::now().to_rfc3339();
         let consent_payload = format!("{}:{}", title, now);
-        let consent_hash = format!(
-            "sha256:{:x}",
-            Sha256::digest(consent_payload.as_bytes())
-        );
+        let consent_hash = format!("sha256:{:x}", Sha256::digest(consent_payload.as_bytes()));
         let consent_timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
@@ -565,8 +562,14 @@ mod tests {
         let findings = mgr.get_findings(session.id).unwrap();
         assert_eq!(findings.len(), 1);
 
-        mgr.add_host(session.id, "10.0.0.1", "AA:BB:CC:DD:EE:FF", "TestVendor", "")
-            .unwrap();
+        mgr.add_host(
+            session.id,
+            "10.0.0.1",
+            "AA:BB:CC:DD:EE:FF",
+            "TestVendor",
+            "",
+        )
+        .unwrap();
         let hosts = mgr.get_hosts(session.id).unwrap();
         assert_eq!(hosts.len(), 1);
         assert_eq!(hosts[0].mac, "AA:BB:CC:DD:EE:FF");

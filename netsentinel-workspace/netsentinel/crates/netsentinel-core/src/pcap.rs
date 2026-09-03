@@ -54,11 +54,7 @@ impl PcapWriter {
         })
     }
 
-    pub fn write_raw_packet(
-        &mut self,
-        timestamp_ms: u64,
-        raw_bytes: &[u8],
-    ) -> io::Result<()> {
+    pub fn write_raw_packet(&mut self, timestamp_ms: u64, raw_bytes: &[u8]) -> io::Result<()> {
         let ts_sec = (timestamp_ms / 1000) as u32;
         let ts_usec = ((timestamp_ms % 1000) * 1000) as u32;
         let incl_len = raw_bytes.len() as u32;
@@ -155,7 +151,9 @@ mod tests {
         writer
             .write_raw_packet(1700000000123, &fake_packet)
             .unwrap();
-        writer.write_raw_packet(1700000000456, &fake_packet).unwrap();
+        writer
+            .write_raw_packet(1700000000456, &fake_packet)
+            .unwrap();
         let count = writer.finalize().unwrap();
 
         assert_eq!(count, 2);

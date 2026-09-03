@@ -227,20 +227,17 @@ impl AiGateway {
         let _permit = self.semaphore.acquire().await;
 
         let tokens = Self::estimate_tokens(&serialized, prompt_chars);
-        self.window_tokens
-            .fetch_add(tokens, Ordering::Relaxed);
+        self.window_tokens.fetch_add(tokens, Ordering::Relaxed);
 
         let start = Instant::now();
-        self.calls_made
-            .fetch_add(1, Ordering::Relaxed);
+        self.calls_made.fetch_add(1, Ordering::Relaxed);
 
         let resp = self.client.summarize_findings(findings).await;
 
         let elapsed_ms = start.elapsed().as_millis() as u64;
         self.total_response_ms
             .fetch_add(elapsed_ms, Ordering::Relaxed);
-        self.total_responses
-            .fetch_add(1, Ordering::Relaxed);
+        self.total_responses.fetch_add(1, Ordering::Relaxed);
 
         match &resp {
             Ok(r) => {

@@ -123,8 +123,7 @@ impl InterceptService {
         drop(scope);
 
         let pddl_result = self.pddl_engine.validate(&action, &ctx);
-        if pddl_result.status == PDDLStatus::NonCompliant
-            || pddl_result.status == PDDLStatus::Error
+        if pddl_result.status == PDDLStatus::NonCompliant || pddl_result.status == PDDLStatus::Error
         {
             warn!(
                 %target_ip,
@@ -132,7 +131,10 @@ impl InterceptService {
                 "PDDL RE-02 refusé — interception bloquée"
             );
             let _ = self.audit_logger.log_action(
-                &format!("PDDL_REJECTED: {}", pddl_result.rule_violation.unwrap_or_default()),
+                &format!(
+                    "PDDL_REJECTED: {}",
+                    pddl_result.rule_violation.unwrap_or_default()
+                ),
                 target_ip,
                 operator,
             );

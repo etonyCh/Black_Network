@@ -66,12 +66,7 @@ impl PqcAuditor {
         }
     }
 
-    pub fn evaluate(
-        &self,
-        _service: &str,
-        algorithm: &str,
-        _version: &str,
-    ) -> PqcAuditResult {
+    pub fn evaluate(&self, _service: &str, algorithm: &str, _version: &str) -> PqcAuditResult {
         let algo_lower = algorithm.to_lowercase();
 
         let matched = self.entries.iter().find(|e| {
@@ -82,15 +77,9 @@ impl PqcAuditor {
 
         match matched {
             Some(entry) => {
-                let is_quantum_safe = matches!(
-                    entry.status.as_str(),
-                    "standardized" | "recommended"
-                );
-                let risk_level = if is_quantum_safe {
-                    "LOW"
-                } else {
-                    "MEDIUM"
-                };
+                let is_quantum_safe =
+                    matches!(entry.status.as_str(), "standardized" | "recommended");
+                let risk_level = if is_quantum_safe { "LOW" } else { "MEDIUM" };
                 let recommendation = if is_quantum_safe {
                     format!(
                         "Algorithme PQC {} (niveau NIST {}) standardisé — sicher pour usage actuel",
@@ -119,11 +108,7 @@ impl PqcAuditor {
                     || algo_lower.contains("chacha")
                     || algo_lower.contains("poly1305")
                     || algo_lower.contains("sha");
-                let risk_level = if is_classical {
-                    "HIGH"
-                } else {
-                    "MEDIUM"
-                };
+                let risk_level = if is_classical { "HIGH" } else { "MEDIUM" };
                 let recommendation = if is_classical {
                     format!(
                         "Algorithme classique {algorithm} — vulnérable aux attaques quantiques, migrer vers PQC NIST"
@@ -150,10 +135,7 @@ impl PqcAuditor {
         }
     }
 
-    pub fn parse_crypto_from_banner<'a>(
-        &self,
-        banner: &'a str,
-    ) -> Vec<(&'a str, &'a str)> {
+    pub fn parse_crypto_from_banner<'a>(&self, banner: &'a str) -> Vec<(&'a str, &'a str)> {
         let mut detected = Vec::new();
         let banner_lower = banner.to_lowercase();
 
@@ -218,18 +200,11 @@ impl PqcAuditor {
         reports
     }
 
-    pub fn get_summary_stats(
-        &self,
-        reports: &[PqcAuditReport],
-    ) -> HashMap<String, u32> {
+    pub fn get_summary_stats(&self, reports: &[PqcAuditReport]) -> HashMap<String, u32> {
         let mut stats = HashMap::new();
         for r in reports {
-            *stats
-                .entry(r.audit_result.status.clone())
-                .or_insert(0) += 1;
-            *stats
-                .entry(r.audit_result.risk_level.clone())
-                .or_insert(0) += 1;
+            *stats.entry(r.audit_result.status.clone()).or_insert(0) += 1;
+            *stats.entry(r.audit_result.risk_level.clone()).or_insert(0) += 1;
         }
         stats
     }
@@ -269,7 +244,7 @@ mod tests {
     fn test_parse_crypto_from_banner() {
         let auditor = PqcAuditor::in_memory();
         let detected = auditor.parse_crypto_from_banner(
-            "SSH-2.0-OpenSSH_9.3 aes256-gcm,chacha20-poly1305 ecdsa-sha2-nistp256"
+            "SSH-2.0-OpenSSH_9.3 aes256-gcm,chacha20-poly1305 ecdsa-sha2-nistp256",
         );
         assert!(!detected.is_empty());
         let algo_names: Vec<&str> = detected.iter().map(|(a, _)| *a).collect();
@@ -283,7 +258,7 @@ mod tests {
         let reports = auditor.audit_service_banner(
             "ssh",
             "9.3",
-            "SSH-2.0-OpenSSH_9.3 aes256-gcm ecdsa-sha2-nistp256"
+            "SSH-2.0-OpenSSH_9.3 aes256-gcm ecdsa-sha2-nistp256",
         );
         assert!(!reports.is_empty());
         for r in &reports {

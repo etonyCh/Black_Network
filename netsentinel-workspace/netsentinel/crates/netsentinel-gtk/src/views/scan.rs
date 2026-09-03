@@ -114,10 +114,7 @@ pub fn build_page(state: &SharedState) -> GtkBox {
         .label("En attente de l'audit...")
         .halign(Align::Start)
         .build();
-    let progress_bar = ProgressBar::builder()
-        .show_text(true)
-        .fraction(0.0)
-        .build();
+    let progress_bar = ProgressBar::builder().show_text(true).fraction(0.0).build();
     progress_box.append(&progress_label);
     progress_box.append(&progress_bar);
     container.append(&progress_box);
