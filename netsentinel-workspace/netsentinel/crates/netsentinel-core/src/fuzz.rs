@@ -154,7 +154,7 @@ pub mod parsers {
         let scanner =
             VulnScanner::load_from_json_string(VULN_DB_JSON, false, "").expect("scanner valide");
         FuzzRunner::run("audit_banner", iterations, Duration::from_secs(1), |i| {
-            let owned_banners = vec![
+            let owned_banners = [
                 String::new(),
                 "SSH-2.0-OpenSSH_8.9p1".to_string(),
                 "nginx/1.18.0".to_string(),
@@ -208,7 +208,7 @@ pub mod parsers {
         FuzzRunner::run("pcap", iterations, Duration::from_secs(1), |i| {
             let dir = std::env::temp_dir().join("netsentinel_fuzz");
             let path = dir.join(format!("fuzz_{}.pcap", i));
-            let _ = std::fs::create_dir_all(&path.parent().unwrap());
+            let _ = std::fs::create_dir_all(path.parent().unwrap());
             if let Ok(mut writer) = PcapWriter::create(&path) {
                 let payload: Vec<u8> = (0..(i as usize % 512)).map(|b| b as u8).collect();
                 let frame = PcapWriter::build_pseudo_ethernet(

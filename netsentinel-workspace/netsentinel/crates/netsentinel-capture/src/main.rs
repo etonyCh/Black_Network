@@ -177,7 +177,7 @@ impl CaptureService {
                                     &src,
                                     &dst,
                                     log.protocol,
-                                    &data[std::mem::size_of::<PacketLog>()..]
+                                    data[std::mem::size_of::<PacketLog>()..]
                                         .get(..log.length as usize)
                                         .unwrap_or_default(),
                                 );

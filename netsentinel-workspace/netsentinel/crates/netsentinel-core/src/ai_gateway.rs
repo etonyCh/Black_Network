@@ -254,11 +254,7 @@ impl AiGateway {
         let calls = self.calls_made.load(Ordering::Relaxed);
         let responses = self.total_responses.load(Ordering::Relaxed);
         let total_ms = self.total_response_ms.load(Ordering::Relaxed);
-        let avg = if responses == 0 {
-            0
-        } else {
-            total_ms / responses
-        };
+        let avg = total_ms.checked_div(responses).unwrap_or(0);
 
         AiGatewayStats {
             calls_made: calls,

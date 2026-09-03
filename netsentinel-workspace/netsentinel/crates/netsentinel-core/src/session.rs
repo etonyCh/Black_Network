@@ -71,7 +71,7 @@ impl SessionStatus {
         }
     }
 
-    pub fn from_str(s: &str) -> Self {
+    pub fn from_label(s: &str) -> Self {
         match s {
             "active" => Self::Active,
             "completed" => Self::Completed,
@@ -260,7 +260,7 @@ impl SessionManager {
                 consent_hash: row.get(3)?,
                 consent_timestamp: row.get(4)?,
                 created_at: row.get(5)?,
-                status: SessionStatus::from_str(&row.get::<_, String>(6)?),
+                status: SessionStatus::from_label(&row.get::<_, String>(6)?),
             })
         })?;
         Ok(rows.next().transpose()?)
@@ -280,7 +280,7 @@ impl SessionManager {
                 consent_hash: row.get(3)?,
                 consent_timestamp: row.get(4)?,
                 created_at: row.get(5)?,
-                status: SessionStatus::from_str(&row.get::<_, String>(6)?),
+                status: SessionStatus::from_label(&row.get::<_, String>(6)?),
             })
         })?;
         Ok(rows.next().transpose()?)
@@ -309,7 +309,7 @@ impl SessionManager {
                 consent_hash: row.get(3)?,
                 consent_timestamp: row.get(4)?,
                 created_at: row.get(5)?,
-                status: SessionStatus::from_str(&row.get::<_, String>(6)?),
+                status: SessionStatus::from_label(&row.get::<_, String>(6)?),
             })
         })?;
         Ok(rows.filter_map(|r| r.ok()).collect())
@@ -317,6 +317,7 @@ impl SessionManager {
 
     // ---- Findings ----
 
+    #[allow(clippy::too_many_arguments)]
     pub fn add_finding(
         &self,
         session_id: i64,

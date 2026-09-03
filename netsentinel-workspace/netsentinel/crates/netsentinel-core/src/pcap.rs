@@ -68,7 +68,7 @@ impl PcapWriter {
         self.writer.write_all(raw_bytes)?;
         self.packet_count += 1;
 
-        if self.packet_count % 100 == 0 {
+        if self.packet_count.is_multiple_of(100) {
             self.writer.flush()?;
         }
 
