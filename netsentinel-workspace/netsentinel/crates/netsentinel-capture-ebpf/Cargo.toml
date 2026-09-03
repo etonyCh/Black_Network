@@ -16,3 +16,9 @@ which = "6.0.0"
 [[bin]]
 name = "netsentinel-capture-ebpf"
 path = "src/main.rs"
+# Ce crate est un programme eBPF (no_std + no_main) compilé en bytecode et
+# chargé dans le noyau. Il ne peut pas former de binaire de test hôte
+# (pas de `main`, pas d'unwinding) : on désactive donc le harnais de test.
+test = false
+bench = false
+doctest = false

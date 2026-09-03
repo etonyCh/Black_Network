@@ -1,8 +1,11 @@
 use adw::prelude::*;
 use adw::{ActionRow, EntryRow, PreferencesGroup};
 use gtk::{Align, Box as GtkBox, Button, Label, Orientation, Spinner};
+use std::sync::Arc;
 
-pub fn build_page() -> GtkBox {
+use crate::app_state::SharedState;
+
+pub fn build_page(state: &SharedState) -> GtkBox {
     let container = GtkBox::builder()
         .orientation(Orientation::Vertical)
         .spacing(12)
@@ -49,9 +52,14 @@ pub fn build_page() -> GtkBox {
         .build();
 
     let spinner = Spinner::builder().build();
+    let count_label = Label::builder()
+        .label("0 hôte(s) trouvé(s)")
+        .halign(Align::Start)
+        .build();
 
     action_box.append(&scan_button);
     action_box.append(&spinner);
+    action_box.append(&count_label);
     container.append(&action_box);
 
     let results_group = gtk::ListBox::builder()
@@ -75,17 +83,20 @@ pub fn build_page() -> GtkBox {
     container.append(&results_container);
 
     let results_group_clone = results_group.clone();
+    let state_clone = Arc::clone(state);
+    let count_label_clone = count_label.clone();
 
     scan_button.connect_clicked(move |btn| {
         let iface = interface_entry.text().to_string();
         let spinner_clone = spinner.clone();
         let results = results_group_clone.clone();
         let btn_clone = btn.clone();
+        let state_inner = Arc::clone(&state_clone);
+        let count_label_inner = count_label_clone.clone();
 
         btn_clone.set_sensitive(false);
         spinner_clone.start();
 
-        // Clear previous results
         while let Some(child) = results.first_child() {
             results.remove(&child);
         }
@@ -93,7 +104,19 @@ pub fn build_page() -> GtkBox {
         gtk::glib::MainContext::default().spawn_local(async move {
             match run_discovery_scan(&iface).await {
                 Ok(hosts) => {
-                    let is_empty = hosts.is_empty();
+                    if let Ok(Some(session)) = state_inner.session_manager.get_active_session() {
+                        for host in &hosts {
+                            let _ = state_inner.session_manager.add_host(
+                                session.id,
+                                &host.ip,
+                                &host.mac,
+                                &host.vendor,
+                                &host.hostname,
+                            );
+                        }
+                    }
+
+                    let total = hosts.len();
                     for host in hosts {
                         let row = ActionRow::builder()
                             .title(host.ip.clone())
@@ -114,7 +137,8 @@ pub fn build_page() -> GtkBox {
                             .build();
                         results.append(&row);
                     }
-                    if is_empty {
+                    count_label_inner.set_label(&format!("{total} hôte(s) trouvé(s)"));
+                    if total == 0 {
                         let row = ActionRow::builder().title("Aucun appareil trouvé").build();
                         results.append(&row);
                     }

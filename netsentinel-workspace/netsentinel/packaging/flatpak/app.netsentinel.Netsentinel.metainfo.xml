@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Copyright 2026 NetSentinel contributors -->
+<component type="desktop-application">
+  <id>app.netsentinel.Netsentinel</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <name>NetSentinel</name>
+  <summary>Suite de cybersécurité réseau native pour GNOME</summary>
+  <description>
+    <p>
+      NetSentinel est une application de sécurité réseau pour Ubuntu 24.04 /
+      GNOME. Elle vous permet de :
+    </p>
+    <ul>
+      <li>Cartographier votre réseau local (découverte ARP)</li>
+      <li>Auditer les vulnérabilités (nmap + Nuclei CVE)</li>
+      <li>Capturer et analyser le trafic réseau (eBPF)</li>
+      <li>Intercepter le trafic avec consentement explicite (ARP spoofing)</li>
+      <li>Énumérer les sous-domaines et répertoires</li>
+      <li>Obtenir des suggestions de remédiation assistées par IA (avec garde-fous)</li>
+    </ul>
+    <p>
+      Architecture à privilèges minimaux : la GUI tourne non-privilégiée et
+      communique via D-Bus avec des démons confinés par AppArmor et systemd.
+      Les interventions sensibles sont gated par le moteur de règles PDDL
+      (consentement RE-01, périmètre RE-02, unicité, timeout 30 min).
+    </p>
+  </description>
+  <launchable type="desktop-id">app.netsentinel.Netsentinel.desktop</launchable>
+  <url type="homepage">https://netsentinel.invalid</url>
+  <url type="bugtracker">https://github.com/etonyCh/Black_Network/issues</url>
+  <provides>
+    <binary>netsentinel</binary>
+  </provides>
+  <screenshots>
+    <screenshot type="default">
+      <caption>Tableau de bord NetSentinel</caption>
+    </screenshot>
+  </screenshots>
+  <releases>
+    <release version="0.1.0" date="2026-09-03">
+      <description>
+        <ul>
+          <li>Première version : discovery, scan, capture, intercept, rapports</li>
+          <li>Moteur PDDL de garde-fou (RE-01/RE-02)</li>
+          <li>Journal d'audit haché (SHA-256) + audit HMAC</li>
+        </ul>
+      </description>
+    </release>
+  </releases>
+  <categories>
+    <category>Utility</category>
+    <category>Security</category>
+    <category>Network</category>
+  </categories>
+  <keywords>
+    <keyword>network</keyword>
+    <keyword>security</keyword>
+    <keyword>pentest</keyword>
+    <keyword>vulnerability</keyword>
+    <keyword>capture</keyword>
+  </keywords>
+  <content_rating type="oars-1.1">
+    <content_attribute id="violence-cartoon">none</content_attribute>
+    <content_attribute id="violence-fiction">none</content_attribute>
+    <content_attribute id="violence-realistic">mild</content_attribute>
+    <content_attribute id="violence-bloodshed">none</content_attribute>
+    <content_attribute id="violence-sexual">none</content_attribute>
+    <content_attribute id="drugs-alcohol">none</content_attribute>
+    <content_attribute id="drugs-narcotics">none</content_attribute>
+    <content_attribute id="drugs-tobacco">none</content_attribute>
+    <content_attribute id="sex-nudity">none</content_attribute>
+    <content_attribute id="sex-themes">none</content_attribute>
+    <content_attribute id="language-profanity">none</content_attribute>
+    <content_attribute id="language-humor">none</content_attribute>
+    <content_attribute id="language-discrimination">none</content_attribute>
+    <content_attribute id="social-chat">none</content_attribute>
+    <content_attribute id="social-info">none</content_attribute>
+    <content_attribute id="social-audio">none</content_attribute>
+    <content_attribute id="social-location">none</content_attribute>
+    <content_attribute id="social-contacts">none</content_attribute>
+    <content_attribute id="money-purchasing">none</content_attribute>
+    <content_attribute id="money-gambling">none</content_attribute>
+  </content_rating>
+</component>

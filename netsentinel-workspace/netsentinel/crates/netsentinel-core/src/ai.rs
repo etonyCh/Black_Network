@@ -94,6 +94,7 @@ pub struct GeminiResponse {
     pub audited_hash: Option<String>,
 }
 
+#[derive(Clone)]
 pub struct GeminiClient {
     api_key: Option<String>,
     ledger: Option<Arc<AuditLedger>>,

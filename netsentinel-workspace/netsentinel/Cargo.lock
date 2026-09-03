@@ -805,12 +805,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "futures"
+version = "0.3.33"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a88cf1f829d945f548cf8fec32c61b1f202b6d93b45848602fc02af4b12ad218"
+dependencies = [
+ "futures-channel",
+ "futures-core",
+ "futures-executor",
+ "futures-io",
+ "futures-sink",
+ "futures-task",
+ "futures-util",
+]
+
+[[package]]
 name = "futures-channel"
 version = "0.3.33"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "262590f4fe6afeb0bc83be1daa64e52657fe185690a958af7f3ad0e92085c5ae"
 dependencies = [
  "futures-core",
+ "futures-sink",
 ]
 
 [[package]]
@@ -878,10 +894,13 @@ version = "0.3.33"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a77a90a256fce34da66415271e30f94ee91c57b04b8a2c042d9cf3220179deaa"
 dependencies = [
+ "futures-channel",
  "futures-core",
+ "futures-io",
  "futures-macro",
  "futures-sink",
  "futures-task",
+ "memchr",
  "pin-project-lite",
  "slab",
 ]
@@ -1651,11 +1670,13 @@ name = "netsentinel"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "futures",
  "futures-util",
  "gtk4",
  "libadwaita",
  "netsentinel-core",
  "netsentinel-proto",
+ "serde_json",
  "tokio",
  "tracing",
  "tracing-subscriber",
@@ -1693,6 +1714,7 @@ dependencies = [
  "clap",
  "libc",
  "netsentinel-capture-common",
+ "netsentinel-core",
  "netsentinel-proto",
  "tokio",
  "tracing",
@@ -1706,6 +1728,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "chrono",
+ "futures",
  "ipnet",
  "keyring",
  "regex",
@@ -1726,6 +1749,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "futures-util",
+ "netsentinel-core",
  "netsentinel-proto",
  "pnet",
  "pnet_datalink",

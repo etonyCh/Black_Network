@@ -1,9 +1,7 @@
 //! netsentinel-captured
 //!
-//! Service D-Bus `org.netsentinel.Capture1`. Remplace le spawn de
-//! `dumpcap`/`tshark` par un programme eBPF chargé au niveau noyau via Aya :
-//! filtrage in-kernel avant remontée en espace utilisateur, bien moins de
-//! surcharge CPU qu'un process de capture externe.
+//! Service D-Bus `org.netsentinel.Capture1`. Capture eBPF via Aya (XDP)
+//! avec écriture PCAP réelle sur disque.
 
 use anyhow::{Context, Result};
 use aya::{
@@ -14,20 +12,38 @@ use aya::{
     Ebpf,
 };
 use netsentinel_capture_common::PacketLog;
+use netsentinel_core::pcap::PcapWriter;
 use netsentinel_proto::{CapturedPacket, CAPTURE_BUS_NAME, CAPTURE_OBJECT_PATH};
+use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use zbus::{interface, object_server::SignalContext};
 
-#[allow(dead_code)] // Champs conservés pour maintenir l'attachement eBPF en vie
 struct CaptureState {
-    ebpf: Ebpf,
-    interface: String,
+    _ebpf: Ebpf,
+    pcap_writer: Arc<Mutex<PcapWriter>>,
+    pcap_path: PathBuf,
 }
 
 struct CaptureService {
     state: Arc<Mutex<Option<CaptureState>>>,
     connection: zbus::Connection,
+}
+
+fn default_pcap_path() -> PathBuf {
+    let base = std::env::var("XDG_DATA_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| {
+            std::env::var("HOME")
+                .map(|h| PathBuf::from(h).join(".local/share"))
+                .unwrap_or_else(|_| PathBuf::from("/tmp"))
+        })
+        .join("netsentinel/captures");
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    base.join(format!("capture_{}.pcap", ts))
 }
 
 #[interface(name = "org.netsentinel.Capture1")]
@@ -40,21 +56,25 @@ impl CaptureService {
             ));
         }
 
-        tracing::info!(interface, "chargement du programme eBPF (XDP)");
+        let pcap_path = default_pcap_path();
+        tracing::info!(interface, path = %pcap_path.display(), "démarrage capture eBPF + PCAP");
 
-        // 1. Charger l'objet eBPF
+        let pcap_writer = PcapWriter::create(&pcap_path)
+            .map_err(|e| zbus::fdo::Error::Failed(format!("erreur création PCAP: {e}")))?;
+        let pcap_writer = Arc::new(Mutex::new(pcap_writer));
+
+        // 1. Charger le programme eBPF
         let mut ebpf = Ebpf::load(include_bytes_aligned!(concat!(
             env!("OUT_DIR"),
             "/netsentinel-capture-ebpf"
         )))
         .map_err(|e| zbus::fdo::Error::Failed(format!("erreur chargement ebpf: {e}")))?;
 
-        // 2. Initialiser le logger eBPF
         if let Err(e) = aya_log::EbpfLogger::init(&mut ebpf) {
             tracing::warn!("impossible d'initialiser aya-log: {e}");
         }
 
-        // 3. Attacher le programme XDP
+        // 2. Attacher XDP
         let program: &mut Xdp = ebpf
             .program_mut("netsentinel_capture_ebpf")
             .ok_or_else(|| zbus::fdo::Error::Failed("programme eBPF introuvable".into()))?
@@ -70,7 +90,7 @@ impl CaptureService {
                 zbus::fdo::Error::Failed(format!("erreur attach XDP sur {interface}: {e}"))
             })?;
 
-        // 4. Configurer la PerfEventArray
+        // 3. PerfEventArray → signaux D-Bus + écriture PCAP
         let events_map = ebpf
             .take_map("EVENTS")
             .ok_or_else(|| zbus::fdo::Error::Failed("map EVENTS introuvable".into()))?;
@@ -78,6 +98,7 @@ impl CaptureService {
             .map_err(|e| zbus::fdo::Error::Failed(format!("erreur map EVENTS: {e}")))?;
 
         let connection = self.connection.clone();
+        let pcap_writer_shared = pcap_writer.clone();
 
         for cpu_id in online_cpus()
             .map_err(|e| zbus::fdo::Error::Failed(format!("erreur online cpus: {:?}", e)))?
@@ -87,6 +108,8 @@ impl CaptureService {
                 .map_err(|e| zbus::fdo::Error::Failed(format!("erreur open perf array: {e}")))?;
 
             let conn_clone = connection.clone();
+            let pcap_writer_clone = pcap_writer_shared.clone();
+
             tokio::spawn(async move {
                 let mut async_fd = match tokio::io::unix::AsyncFd::new(buf) {
                     Ok(fd) => fd,
@@ -96,7 +119,6 @@ impl CaptureService {
                     }
                 };
 
-                // On crée le contexte d'émission une seule fois pour ce thread.
                 let signal_ctxt = match SignalContext::new(&conn_clone, CAPTURE_OBJECT_PATH) {
                     Ok(ctx) => ctx,
                     Err(e) => {
@@ -130,14 +152,15 @@ impl CaptureService {
                             let src = std::net::Ipv4Addr::from(log.src_addr).to_string();
                             let dst = std::net::Ipv4Addr::from(log.dst_addr).to_string();
 
+                            let ts_ms = std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_millis() as u64;
+
                             let captured_packet = CapturedPacket {
-                                timestamp_ms: std::time::SystemTime::now()
-                                    .duration_since(std::time::UNIX_EPOCH)
-                                    .unwrap_or_default()
-                                    .as_millis()
-                                    as u64,
-                                src_ip: src,
-                                dst_ip: dst,
+                                timestamp_ms: ts_ms,
+                                src_ip: src.clone(),
+                                dst_ip: dst.clone(),
                                 protocol: match log.protocol {
                                     6 => "TCP".to_string(),
                                     17 => "UDP".to_string(),
@@ -148,10 +171,24 @@ impl CaptureService {
                                 unencrypted: log.unencrypted == 1,
                             };
 
-                            // On peut bloquer de manière asynchrone ici ? for_each est synchrone,
-                            // mais on peut utiliser tokio::spawn ou emit si ce n'est pas bloquant.
-                            // zbus packet_captured.await est asynchrone !
-                            // Donc on le spawn dans tokio.
+                            // Écriture PCAP
+                            {
+                                let frame = PcapWriter::build_pseudo_ethernet(
+                                    &src,
+                                    &dst,
+                                    log.protocol,
+                                    &data[std::mem::size_of::<PacketLog>()..]
+                                        .get(..log.length as usize)
+                                        .unwrap_or_default(),
+                                );
+                                let writer_clone = pcap_writer_clone.clone();
+                                tokio::spawn(async move {
+                                    let mut w = writer_clone.lock().await;
+                                    let _ = w.write_raw_packet(ts_ms, &frame);
+                                });
+                            }
+
+                            // Signal D-Bus
                             let signal_ctxt = signal_ctxt.clone();
                             tokio::spawn(async move {
                                 if let Err(e) =
@@ -169,20 +206,33 @@ impl CaptureService {
         }
 
         *state = Some(CaptureState {
-            ebpf,
-            interface: interface.to_string(),
+            _ebpf: ebpf,
+            pcap_writer,
+            pcap_path,
         });
         Ok(())
     }
 
     async fn stop_capture(&self) -> zbus::fdo::Result<String> {
         let mut state = self.state.lock().await;
-        if state.take().is_none() {
-            return Err(zbus::fdo::Error::Failed("aucune capture en cours".into()));
+        match state.take() {
+            Some(capture_state) => {
+                let path = capture_state.pcap_path.to_string_lossy().to_string();
+                let count = capture_state
+                    .pcap_writer
+                    .lock()
+                    .await
+                    .finalize()
+                    .map_err(|e| {
+                        zbus::fdo::Error::Failed(format!("erreur finalize PCAP: {e}"))
+                    })?;
+                tracing::info!(path = %path, packets = count, "capture arrêtée, PCAP finalisé");
+                Ok(path)
+            }
+            None => Err(zbus::fdo::Error::Failed(
+                "aucune capture en cours".into(),
+            )),
         }
-
-        // L'instance de `Ebpf` est droppée ici, ce qui détache automatiquement le programme
-        Ok("/var/lib/netsentinel/captures/session.pcap".to_string())
     }
 
     #[zbus(signal)]
@@ -215,7 +265,7 @@ async fn main() -> Result<()> {
 
     tracing::info!(
         bus = CAPTURE_BUS_NAME,
-        "netsentinel-captured prêt (eBPF activé)"
+        "netsentinel-captured prêt (eBPF + PCAP writing)"
     );
     std::future::pending::<()>().await;
     Ok(())

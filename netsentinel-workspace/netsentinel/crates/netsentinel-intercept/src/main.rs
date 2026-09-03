@@ -15,6 +15,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{anyhow, bail, Context, Result};
+use netsentinel_core::pddl::{ActionType, PDDLAction, PDDLContext, PDDLEngine, PDDLStatus};
 use netsentinel_proto::{INTERCEPT_BUS_NAME, INTERCEPT_OBJECT_PATH};
 use pnet::datalink::{self, Channel, MacAddr, NetworkInterface};
 use pnet::ipnetwork::IpNetwork;
@@ -67,17 +68,20 @@ pub struct InterceptService {
     expected_token: String,
     audit_logger: Arc<AuditLogger>,
     runtime: Arc<RwLock<Option<InterceptRuntime>>>,
+    _session_starting: std::sync::atomic::AtomicBool,
+    pddl_engine: PDDLEngine,
+    authorized_scope: Arc<RwLock<Vec<String>>>,
 }
 
 #[interface(name = "org.netsentinel.Intercept1")]
 impl InterceptService {
-    /// Demande de session d'interception.
+    /// Demande de session d'interception avec validation PDDL RE-02.
     ///
     /// # Sécurité (RE-01 + RE-02)
     /// - Jeton d'autorisation OBLIGATOIRE (env var NETSENTINEL_AUTH_TOKEN)
+    /// - Scope RE-02 validé via PDDLEngine avant tout lancement
     /// - Maximum 1 session simultanée (unicité)
     /// - Timeout 30 minutes forcé (RE-02) — cleanup auto + audit log
-    /// - Toute action / tentative rejetée logguée HMAC-SHA256
     #[zbus(name = "RequestSession")]
     async fn request_session(
         &self,
@@ -90,6 +94,48 @@ impl InterceptService {
             let _ = self
                 .audit_logger
                 .log_action("AUTH_TOKEN_REJECTED", target_ip, operator);
+            return Ok(false);
+        }
+
+        // ===== Validation PDDL RE-02 : scope =====
+        let scope = self.authorized_scope.read().await;
+        let action = PDDLAction {
+            action_type: ActionType::InterceptStart,
+            description: format!("ARP spoof MitM on {target_ip}"),
+            requires_consent: true,
+            requires_scope: true,
+            requires_unicity: true,
+        };
+        let ctx = PDDLContext {
+            authorized_scope: scope.clone(),
+            consent_hash: Some(authorization_token.to_string()),
+            consent_timestamp: Some(
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs_f64(),
+            ),
+            target: Some(target_ip.to_string()),
+            session_already_active: self.runtime.read().await.is_some(),
+            planned_seconds: Some(1800),
+            ..Default::default()
+        };
+        drop(scope);
+
+        let pddl_result = self.pddl_engine.validate(&action, &ctx);
+        if pddl_result.status == PDDLStatus::NonCompliant
+            || pddl_result.status == PDDLStatus::Error
+        {
+            warn!(
+                %target_ip,
+                violation = ?pddl_result.rule_violation,
+                "PDDL RE-02 refusé — interception bloquée"
+            );
+            let _ = self.audit_logger.log_action(
+                &format!("PDDL_REJECTED: {}", pddl_result.rule_violation.unwrap_or_default()),
+                target_ip,
+                operator,
+            );
             return Ok(false);
         }
 
@@ -113,7 +159,7 @@ impl InterceptService {
             .map_err(|e| zbus::fdo::Error::IOError(e.to_string()))?;
 
         *self.runtime.write().await = Some(rt);
-        info!(%target_ip, %operator, "Session MitM démarrée");
+        info!(%target_ip, %operator, "Session MitM démarrée (PDDL validée)");
         Ok(true)
     }
 
@@ -506,23 +552,40 @@ async fn main() -> Result<()> {
         )
         .init();
 
-    let expected_token = std::env::var("NETSENTINEL_AUTH_TOKEN").unwrap_or_else(|_| {
-        warn!("NETSENTINEL_AUTH_TOKEN absent — fallback dummy_token. NE JAMAIS UTILISER EN PROD !");
-        "dummy_token".to_string()
-    });
+    let expected_token = std::env::var("NETSENTINEL_AUTH_TOKEN")
+        .context("NETSENTINEL_AUTH_TOKEN est obligatoire")?;
+    if expected_token.trim().is_empty() {
+        bail!("NETSENTINEL_AUTH_TOKEN ne doit pas être vide");
+    }
+
     let audit_secret = std::env::var("NETSENTINEL_AUDIT_SECRET")
-        .unwrap_or_else(|_| "netsentinel-dev-audit-secret-change-me".to_string());
+        .context("NETSENTINEL_AUDIT_SECRET est obligatoire")?;
+    if audit_secret.trim().is_empty() {
+        bail!("NETSENTINEL_AUDIT_SECRET ne doit pas être vide");
+    }
 
     let audit_logger = Arc::new(AuditLogger::new(
         &audit_secret,
         "/var/log/netsentinel_audit.jsonl",
     ));
 
+    let pddl_engine = PDDLEngine::default_rules();
+
+    let scope_env = std::env::var("NETSENTINEL_SCOPE").unwrap_or_default();
+    let authorized_scope: Vec<String> = scope_env
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+
     let runtime = Arc::new(RwLock::new(None));
     let svc = InterceptService {
         expected_token,
         audit_logger: audit_logger.clone(),
         runtime: runtime.clone(),
+        _session_starting: std::sync::atomic::AtomicBool::new(false),
+        pddl_engine,
+        authorized_scope: Arc::new(RwLock::new(authorized_scope)),
     };
 
     let conn = Connection::system().await.context("D-Bus system bus")?;

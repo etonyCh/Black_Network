@@ -7,6 +7,8 @@ use gtk::{
 };
 use std::path::Path;
 
+use crate::app_state::SharedState;
+
 fn list_network_interfaces() -> Vec<String> {
     let mut ifaces: Vec<String> = Vec::new();
     if let Ok(readdir) = std::fs::read_dir(Path::new("/sys/class/net")) {
@@ -27,7 +29,7 @@ fn list_network_interfaces() -> Vec<String> {
     ifaces
 }
 
-pub fn build_page() -> GtkBox {
+pub fn build_page(_state: &SharedState) -> GtkBox {
     let container = GtkBox::builder()
         .orientation(Orientation::Vertical)
         .spacing(12)
@@ -53,7 +55,6 @@ pub fn build_page() -> GtkBox {
     container.append(&title);
     container.append(&description);
 
-    // Configuration : DropDown interfaces plutôt que EntryRow textuel
     let iface_names = list_network_interfaces();
     let iface_list_model = StringList::new(
         &iface_names
@@ -80,7 +81,6 @@ pub fn build_page() -> GtkBox {
     config_group.add(&iface_row);
     container.append(&config_group);
 
-    // Boutons Démarrer / Arrêter
     let action_box = GtkBox::builder()
         .orientation(Orientation::Horizontal)
         .spacing(12)
@@ -109,7 +109,6 @@ pub fn build_page() -> GtkBox {
     container.append(&action_box);
     container.append(&status_label);
 
-    // Liste paquets en temps réel
     let results_header = Label::builder()
         .label("<b>Paquets capturés</b>")
         .use_markup(true)
@@ -131,7 +130,6 @@ pub fn build_page() -> GtkBox {
 
     container.append(&scrolled_window);
 
-    // ========== HANDLER : START ==========
     let start_btn_clone = start_button.clone();
     let stop_btn_clone = stop_button.clone();
     let list_box_clone = list_box.clone();
@@ -243,7 +241,6 @@ pub fn build_page() -> GtkBox {
         });
     });
 
-    // ========== HANDLER : STOP ==========
     let stop_btn_clone = stop_button.clone();
     let start_btn_clone2 = start_button.clone();
     let status_clone2 = status_label.clone();

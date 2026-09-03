@@ -1,0 +1,42 @@
+id: app.netsentinel.Netsentinel
+runtime: org.gnome.Platform
+runtime-version: '46'
+sdk: org.gnome.Sdk
+command: netsentinel
+finish-args:
+  - --share=ipc
+  - --socket=fallback-x11
+  - --socket=wayland
+  - --device=dri
+  # D-Bus : la GUI parle au bus système pour joindre les démons
+  - --system-talk-name=org.netsentinel.*
+  # Stockage des sessions/settings hors sandbox
+  - --filesystem=~/.local/share/netsentinel
+  - --filesystem=xdg-run
+  - --talk-name=org.freedesktop.portal.*
+  - --talk-name=org.gnome.SettingsDaemon.*
+  # Aucun réseau global n'est nécessaire (les scans passent par les démons)
+  - --unshare=network
+  - --unshare=ipc
+
+modules:
+  - name: netsentinel-gtk
+    buildsystem: simple
+    build-commands:
+      - install -Dm755 /app/extra/netsentinel /app/bin/netsentinel
+      - install -Dm644 /app/extra/app.netsentinel.Netsentinel.desktop /app/share/applications/app.netsentinel.Netsentinel.desktop
+      - install -Dm644 /app/extra/app.netsentinel.Netsentinel.metainfo.xml /app/share/metainfo/app.netsentinel.Netsentinel.metainfo.xml
+      - install -Dm644 /app/extra/icon.svg /app/share/icons/hicolor/scalable/apps/app.netsentinel.Netsentinel.svg
+    sources:
+      - type: file
+        path: ../target/release/netsentinel
+        dest-filename: netsentinel
+      - type: file
+        path: packaging/flatpak/app.netsentinel.Netsentinel.desktop
+        dest-filename: app.netsentinel.Netsentinel.desktop
+      - type: file
+        path: packaging/flatpak/app.netsentinel.Netsentinel.metainfo.xml
+        dest-filename: app.netsentinel.Netsentinel.metainfo.xml
+      - type: file
+        path: packaging/flatpak/icon.svg
+        dest-filename: icon.svg

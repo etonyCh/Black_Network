@@ -3,7 +3,10 @@ use adw::{ActionRow, EntryRow, PreferencesGroup};
 use gtk::{
     glib, Align, Box as GtkBox, Button, CheckButton, Entry, Label, LevelBar, Orientation, Spinner,
 };
+use std::sync::Arc;
 use std::time::Instant;
+
+use crate::app_state::SharedState;
 
 const MAX_SECONDS: u32 = 30 * 60; // RE-02: 30 min
 
@@ -14,7 +17,7 @@ fn format_hms(total_secs: u32) -> String {
     format!("{:02}:{:02}:{:02}", h, m, s)
 }
 
-pub fn build_page() -> GtkBox {
+pub fn build_page(state: &SharedState) -> GtkBox {
     let container = GtkBox::builder()
         .orientation(Orientation::Vertical)
         .spacing(12)
@@ -74,8 +77,11 @@ pub fn build_page() -> GtkBox {
         .text("192.168.1.10")
         .build();
 
-    // Jeton d'autorisation — Saisie manuelle car /etc/netsentinel.env est root:root 0600
-    // (on ne lit PAS de secrets système depuis une UI non privilégiée).
+    let scope_entry = EntryRow::builder()
+        .title("Périmètre autorisé RE-02 (CIDR, séparé par virgules)")
+        .text("192.168.1.0/24")
+        .build();
+
     let token_entry_inner = Entry::builder()
         .placeholder_text("NETSENTINEL_AUTH_TOKEN (identique au démon)")
         .visibility(false)
@@ -95,6 +101,7 @@ pub fn build_page() -> GtkBox {
         .build();
 
     config_group.add(&target_entry);
+    config_group.add(&scope_entry);
     config_group.add(&token_entry);
     config_group.add(&operator_entry);
     container.append(&config_group);
@@ -127,7 +134,6 @@ pub fn build_page() -> GtkBox {
     action_box.append(&spinner);
     container.append(&action_box);
 
-    // Progression temporelle (RE-02 : durée max 30 min)
     let timer_label = Label::builder()
         .label(format!(
             "⏱ Temps restant autorisé : <b>{}</b>  (30:00 max)",
@@ -146,7 +152,6 @@ pub fn build_page() -> GtkBox {
     container.append(&timer_label);
     container.append(&timer_bar);
 
-    // Log label
     let log_label = Label::builder()
         .label("<i>Prêt — le consentement ET le jeton sont requis.</i>")
         .use_markup(true)
@@ -155,7 +160,7 @@ pub fn build_page() -> GtkBox {
         .build();
     container.append(&log_label);
 
-    // ========== Logique d'activation : consent ET jeton non vide ==========
+    // Logique d'activation
     let consent_for_gate = consent_check.clone();
     let token_for_gate = token_entry_inner.clone();
     let start_for_gate = start_button.clone();
@@ -184,7 +189,7 @@ pub fn build_page() -> GtkBox {
         }
     ));
 
-    // ========== HANDLER : START ==========
+    // HANDLER : START
     let start_btn_clone = start_button.clone();
     let stop_btn_clone = stop_button.clone();
     let spinner_clone = spinner.clone();
@@ -194,14 +199,17 @@ pub fn build_page() -> GtkBox {
     let token_text_entry = token_entry_inner.clone();
     let operator_text_clone = operator_entry.clone();
     let consent_clone = consent_check.clone();
+    let target_clone = target_entry.clone();
+    let scope_clone = scope_entry.clone();
+    let state_clone = Arc::clone(state);
 
-    // Minuteur local UI (rafraîchi toutes les secondes via timeout glib)
     let session_started_cell: std::rc::Rc<std::cell::RefCell<Option<Instant>>> =
         std::rc::Rc::new(std::cell::RefCell::new(None));
     let session_started_cell_start = session_started_cell.clone();
 
     start_button.connect_clicked(move |_| {
-        let target = target_entry.text().to_string();
+        let target = target_clone.text().to_string();
+        let scope_text = scope_clone.text().to_string();
         let auth_token = token_text_entry.text().to_string();
         let operator = operator_text_clone.text().to_string();
 
@@ -212,10 +220,31 @@ pub fn build_page() -> GtkBox {
             return;
         }
 
+        // Générer le hash de consentement RE-01 (SHA-256 via session module)
+        let consent_hash = state_clone
+            .session_manager
+            .generate_consent_hash(&operator, &target);
+
+        // Créer la session avec le scope RE-02
+        let scope = netsentinel_core::SessionScope {
+            targets: scope_text
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect(),
+        };
+        let _session = state_clone.session_manager.create_session(
+            &format!("MitM → {}", target),
+            &scope,
+        );
+
         start_btn_clone.set_sensitive(false);
         stop_btn_clone.set_sensitive(true);
         spinner_clone.start();
-        log_label_clone.set_markup("<i>Demande de session D-Bus + Polkit org.netsentinel.intercept.run (auth_admin SANS cache)...</i>");
+        log_label_clone.set_markup(&format!(
+            "<i>Session créée (consent hash: <tt>{}</tt>). Demande D-Bus + Polkit...</i>",
+            &consent_hash[..16]
+        ));
 
         let start_btn_ui = start_btn_clone.clone();
         let stop_btn_ui = stop_btn_clone.clone();
@@ -245,7 +274,7 @@ pub fn build_page() -> GtkBox {
                 Ok(p) => p,
                 Err(e) => {
                     log_ui.set_markup(&format!(
-                        "<span foreground='red'>❌ Service Intercept1 introuvable : {}\n→ vérifiez `systemctl status netsentinel-interceptd` (désactivé par défaut postinst).</span>",
+                        "<span foreground='red'>❌ Service Intercept1 introuvable : {}\n→ vérifiez `systemctl status netsentinel-interceptd`.</span>",
                         e
                     ));
                     start_btn_ui.set_sensitive(true);
@@ -262,19 +291,19 @@ pub fn build_page() -> GtkBox {
                 Ok(true) => {
                     log_ui.set_markup(&format!(
                         "<span foreground='#26a269'>✅ Session MitM <b>{}</b> démarrée. Opérateur: <b>{}</b>.\n\
-                        Timeout serveur 30 min actif + UI minuteur. Un journal HMAC-SHA256 est écrit.</span>",
-                        target, operator
+                        Consent RE-01 hashé. Périmètre RE-02: [{}].</span>",
+                        target, operator,
+                        scope_text
                     ));
                     *started_cell.borrow_mut() = Some(Instant::now());
 
-                    // Démarre le minuteur UI local (tick 1s)
                     glib::timeout_add_seconds_local(1, glib::clone!(#[strong] timer_lbl_ui, #[strong] timer_bar_ui, #[strong] started_cell, move || {
                         let Some(started) = *started_cell.borrow() else {
                             return glib::ControlFlow::Break;
                         };
                         let elapsed = started.elapsed().as_secs() as u32;
                         if elapsed >= MAX_SECONDS {
-                            timer_lbl_ui.set_markup("⏱ Temps écoulé — la session doit être/est automatiquement terminée par le démon.");
+                            timer_lbl_ui.set_markup("⏱ Temps écoulé — session terminée par le démon.");
                             timer_bar_ui.set_value(1.0);
                             return glib::ControlFlow::Break;
                         }
@@ -297,7 +326,7 @@ pub fn build_page() -> GtkBox {
                 }
                 Err(e) => {
                     log_ui.set_markup(&format!(
-                        "<span foreground='red'>❌ Échec request_session : {}\n→ Le plus souvent : authentification Polkit annulée ou CAP_NET_ADMIN absent.</span>",
+                        "<span foreground='red'>❌ Échec request_session : {}</span>",
                         e
                     ));
                     start_btn_ui.set_sensitive(true);
@@ -309,7 +338,7 @@ pub fn build_page() -> GtkBox {
         });
     });
 
-    // ========== HANDLER : STOP ==========
+    // HANDLER : STOP
     let stop_btn_clone2 = stop_button.clone();
     let start_btn_clone2 = start_button.clone();
     let log_label_clone2 = log_label.clone();
@@ -319,6 +348,7 @@ pub fn build_page() -> GtkBox {
     let session_stopped_cell = session_started_cell.clone();
     let timer_label_final = timer_label.clone();
     let timer_bar_final = timer_bar.clone();
+    let state_clone2 = Arc::clone(state);
 
     stop_button.connect_clicked(move |_| {
         stop_btn_clone2.set_sensitive(false);
@@ -332,14 +362,20 @@ pub fn build_page() -> GtkBox {
         let stop_cell = session_stopped_cell.clone();
         let tl = timer_label_final.clone();
         let tb = timer_bar_final.clone();
+        let state_inner = Arc::clone(&state_clone2);
 
         gtk::glib::MainContext::default().spawn_local(async move {
+            // Compléter la session active
+            if let Ok(Some(session)) = state_inner.session_manager.get_active_session() {
+                let _ = state_inner.session_manager.complete_session(session.id);
+            }
+
             if let Ok(connection) = zbus::Connection::system().await {
                 if let Ok(proxy) = netsentinel_proto::Intercept1Proxy::new(&connection).await {
                     match proxy.end_session().await {
                         Ok(()) => {
                             log_ui.set_markup(
-                                "<span foreground='#26a269'>✅ Session arrêtée — reARP OK, IP forward restauré. Consultez /var/log/netsentinel_audit.jsonl.</span>",
+                                "<span foreground='#26a269'>✅ Session arrêtée — reARP OK, IP forward restauré.</span>",
                             );
                         }
                         Err(e) => {
@@ -351,7 +387,6 @@ pub fn build_page() -> GtkBox {
                     }
                 }
             }
-            // Reset UI gate
             refresh_start_gate(&gate_consent, &gate_token, &gate_btn);
             start_btn_ui.set_sensitive(gate_consent.is_active() && !gate_token.text().trim().is_empty());
             *stop_cell.borrow_mut() = None;

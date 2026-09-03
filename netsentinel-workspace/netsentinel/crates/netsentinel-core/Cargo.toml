@@ -17,6 +17,7 @@ ipnet = { workspace = true }
 chrono = { workspace = true }
 regex = { workspace = true }
 tokio = { workspace = true, features = ["io-util"] }
+futures = "0.3"
 keyring = { workspace = true }
 zeroize = { workspace = true }
 reqwest = { workspace = true }

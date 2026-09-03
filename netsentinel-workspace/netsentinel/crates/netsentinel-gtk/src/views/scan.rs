@@ -1,11 +1,14 @@
 use adw::prelude::*;
 use adw::{ActionRow, EntryRow, PreferencesGroup};
 use gtk::{
-    Align, Box as GtkBox, Button, Label, LevelBar, ListBox, Orientation, ScrolledWindow,
-    SelectionMode, Spinner,
+    Align, Box as GtkBox, Button, Label, LevelBar, ListBox, Orientation, ProgressBar,
+    ScrolledWindow, SelectionMode, Spinner,
 };
 use netsentinel_proto::Severity;
 use std::path::Path;
+use std::sync::Arc;
+
+use crate::app_state::SharedState;
 
 fn nuclei_is_installed() -> bool {
     Path::new("/usr/bin/nuclei").exists() || Path::new("/usr/local/bin/nuclei").exists()
@@ -29,7 +32,7 @@ fn severity_class(sev: Severity) -> &'static str {
     }
 }
 
-pub fn build_page() -> GtkBox {
+pub fn build_page(state: &SharedState) -> GtkBox {
     let container = GtkBox::builder()
         .orientation(Orientation::Vertical)
         .spacing(12)
@@ -55,7 +58,6 @@ pub fn build_page() -> GtkBox {
     container.append(&title);
     container.append(&description);
 
-    // Bannière d'état Nuclei (optionnel recommandé)
     let nuclei_banner = if nuclei_is_installed() {
         Label::builder()
             .label("<span foreground='#26a269'>✅ Nuclei détecté — audit complet (nmap + CVE/YAML)</span>")
@@ -72,7 +74,6 @@ pub fn build_page() -> GtkBox {
     };
     container.append(&nuclei_banner);
 
-    // Configuration de la cible
     let config_group = PreferencesGroup::new();
     config_group.set_title("Cible");
     config_group.set_description(Some(
@@ -85,7 +86,6 @@ pub fn build_page() -> GtkBox {
     config_group.add(&target_entry);
     container.append(&config_group);
 
-    // Boutons
     let action_box = GtkBox::builder()
         .orientation(Orientation::Horizontal)
         .spacing(12)
@@ -106,7 +106,22 @@ pub fn build_page() -> GtkBox {
     action_box.append(&spinner);
     container.append(&action_box);
 
-    // Barre de niveau global de risque
+    let progress_box = GtkBox::builder()
+        .orientation(Orientation::Vertical)
+        .spacing(4)
+        .build();
+    let progress_label = Label::builder()
+        .label("En attente de l'audit...")
+        .halign(Align::Start)
+        .build();
+    let progress_bar = ProgressBar::builder()
+        .show_text(true)
+        .fraction(0.0)
+        .build();
+    progress_box.append(&progress_label);
+    progress_box.append(&progress_bar);
+    container.append(&progress_box);
+
     let risk_label = Label::builder()
         .label("Score de risque global")
         .halign(Align::Start)
@@ -126,7 +141,6 @@ pub fn build_page() -> GtkBox {
     risk_box.append(&risk_bar);
     container.append(&risk_box);
 
-    // Résultats
     let summary_label = Label::builder()
         .label("<i>Aucun audit réalisé pour l'instant.</i>")
         .use_markup(true)
@@ -155,12 +169,14 @@ pub fn build_page() -> GtkBox {
     results_container.append(&scrolled_window);
     container.append(&results_container);
 
-    // ========== HANDLER ==========
     let start_btn_clone = start_button.clone();
     let spinner_clone = spinner.clone();
     let results_clone = results_group.clone();
     let summary_clone = summary_label.clone();
     let risk_bar_clone = risk_bar.clone();
+    let state_clone = Arc::clone(state);
+    let progress_label_clone = progress_label.clone();
+    let progress_bar_clone = progress_bar.clone();
 
     start_button.connect_clicked(move |_| {
         let target = target_entry.text().to_string();
@@ -170,6 +186,8 @@ pub fn build_page() -> GtkBox {
         start_btn_clone.set_sensitive(false);
         spinner_clone.start();
         summary_clone.set_markup("<i>Audit en cours... patience, nmap peut prendre 1 à 3 minutes.</i>");
+        progress_bar_clone.set_fraction(0.0);
+        progress_label_clone.set_label("Initialisation de l'audit...");
 
         while let Some(child) = results_clone.first_child() {
             results_clone.remove(&child);
@@ -180,6 +198,9 @@ pub fn build_page() -> GtkBox {
         let results_ui = results_clone.clone();
         let summary_ui = summary_clone.clone();
         let risk_ui = risk_bar_clone.clone();
+        let state_inner = Arc::clone(&state_clone);
+        let progress_label_ui = progress_label_clone.clone();
+        let progress_bar_ui = progress_bar_clone.clone();
 
         gtk::glib::MainContext::default().spawn_local(async move {
             let connection = match zbus::Connection::system().await {
@@ -208,6 +229,9 @@ pub fn build_page() -> GtkBox {
                 }
             };
 
+            progress_label_ui.set_label("Scan nmap en cours...");
+            progress_bar_ui.set_fraction(0.3);
+
             match proxy.deep_scan(&target).await {
                 Ok(findings) => {
                     let total = findings.len();
@@ -217,30 +241,39 @@ pub fn build_page() -> GtkBox {
                     let mut low = 0u32;
                     let mut max_risk = 0.0_f64;
 
-                    for finding in findings {
+                    // Sauvegarder les findings dans la session active
+                    let session_id = state_inner
+                        .session_manager
+                        .get_active_session()
+                        .ok()
+                        .flatten()
+                        .map(|s| s.id);
+
+                    for finding in &findings {
                         let risk = severity_level(finding.severity);
                         if risk > max_risk {
                             max_risk = risk;
                         }
-                        let counter_row = match finding.severity {
-                            Severity::Critical => {
-                                crit += 1;
-                                Some("crit")
-                            }
-                            Severity::High => {
-                                high += 1;
-                                Some("high")
-                            }
-                            Severity::Medium => {
-                                med += 1;
-                                Some("med")
-                            }
-                            Severity::Low => {
-                                low += 1;
-                                Some("low")
-                            }
-                            _ => None,
+                        match finding.severity {
+                            Severity::Critical => crit += 1,
+                            Severity::High => high += 1,
+                            Severity::Medium => med += 1,
+                            Severity::Low => low += 1,
+                            _ => {}
                         };
+
+                        // Persister dans la DB
+                        if let Some(sid) = session_id {
+                            let _ = state_inner.session_manager.add_finding(
+                                sid,
+                                &finding.target,
+                                finding.port,
+                                &finding.service,
+                                &finding.cve,
+                                &format!("{:?}", finding.severity),
+                                &finding.description,
+                            );
+                        }
 
                         let sev_label = format!("{:?}", finding.severity);
                         let port_txt = if finding.port > 0 {
@@ -266,7 +299,6 @@ pub fn build_page() -> GtkBox {
                             .title(&title)
                             .subtitle(&subtitle)
                             .build();
-                        let _ = counter_row;
                         row.add_css_class(severity_class(finding.severity));
                         results_ui.append(&row);
                     }

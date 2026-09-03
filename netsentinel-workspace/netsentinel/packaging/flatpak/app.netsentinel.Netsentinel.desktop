@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=NetSentinel
+Comment=Suite de cybersécurité réseau pour GNOME
+Exec=netsentinel
+Terminal=false
+Type=Application
+Categories=Utility;Security;Network;
+Keywords=network;security;pentest;vulnerability;capture;
+StartupNotify=true
+Icon=app.netsentinel.Netsentinel
+X-GNOME-UsesNotifications=true
