@@ -12,14 +12,16 @@ Restart=on-failure
 RestartSec=2
 
 # --- Réduction des privilèges ---
-# Pas de root : seulement CAP_NET_RAW, retiré du bounding set après usage
-# initial n'est pas nécessaire ici car le process en a besoin en continu
-# pour émettre/recevoir des trames ARP pendant toute sa durée de vie.
 User=netsentinel-discover
 Group=netsentinel
 CapabilityBoundingSet=CAP_NET_RAW
 AmbientCapabilities=CAP_NET_RAW
 NoNewPrivileges=yes
+
+# --- Création automatique des dossiers système ---
+StateDirectory=netsentinel
+LogsDirectory=netsentinel
+RuntimeDirectory=netsentinel
 
 # --- Sandboxing filesystem/kernel ---
 ProtectSystem=strict
@@ -38,7 +40,7 @@ LockPersonality=yes
 MemoryDenyWriteExecute=yes
 RemoveIPC=yes
 
-# --- Réseau : seul ce service a besoin d'AF_PACKET ---
+# --- Réseau : AF_PACKET requis pour sockets bruts ARP ---
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_PACKET
 
 # --- Filtrage syscall (liste blanche) ---

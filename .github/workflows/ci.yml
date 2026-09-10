@@ -184,6 +184,8 @@ jobs:
           install -m 0644 packaging/systemd/netsentinel-captured.service   "$STAGING/$SYSTEMD_UNITS/"
           install -m 0644 packaging/systemd/netsentinel-interceptd.service "$STAGING/$SYSTEMD_UNITS/"
 
+          install -m 0755 packaging/debian/postinst "$STAGING/DEBIAN/postinst"
+
           CONTROL_FILE="$STAGING/DEBIAN/control"
           : > "$CONTROL_FILE"
           echo "Package: netsentinel" >> "$CONTROL_FILE"

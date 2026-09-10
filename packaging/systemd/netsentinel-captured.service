@@ -17,6 +17,11 @@ CapabilityBoundingSet=CAP_BPF CAP_NET_ADMIN CAP_PERFMON CAP_SYS_RESOURCE
 AmbientCapabilities=CAP_BPF CAP_NET_ADMIN CAP_PERFMON CAP_SYS_RESOURCE
 NoNewPrivileges=yes
 
+# --- Création automatique des dossiers système ---
+StateDirectory=netsentinel/captures
+LogsDirectory=netsentinel
+RuntimeDirectory=netsentinel
+
 ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes
@@ -30,8 +35,7 @@ RestrictSUIDSGID=yes
 LockPersonality=yes
 RemoveIPC=yes
 
-# Seul répertoire en écriture : les exports .pcap et le pinning bpffs
-ReadWritePaths=/var/lib/netsentinel/captures /sys/fs/bpf/netsentinel
+ReadWritePaths=-/var/lib/netsentinel/captures -/sys/fs/bpf/netsentinel
 
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_PACKET
 

@@ -11,11 +11,15 @@ ExecStart=/usr/libexec/netsentinel/netsentinel-scand
 Restart=on-failure
 RestartSec=2
 
-# Aucune capacité élevée : nmap/nuclei tournent en scan TCP connect() normal.
 User=netsentinel-scan
 Group=netsentinel
 CapabilityBoundingSet=
 NoNewPrivileges=yes
+
+# --- Création automatique des dossiers système ---
+StateDirectory=netsentinel/scans
+LogsDirectory=netsentinel
+RuntimeDirectory=netsentinel
 
 ProtectSystem=strict
 ProtectHome=yes
@@ -33,7 +37,7 @@ LockPersonality=yes
 MemoryDenyWriteExecute=yes
 RemoveIPC=yes
 
-ReadWritePaths=/var/lib/netsentinel/scans
+ReadWritePaths=-/var/lib/netsentinel/scans
 
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 
