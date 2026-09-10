@@ -39,6 +39,7 @@
 
   #include <abstractions/dbus-strict>
   dbus (send, receive) bus=system,
+  dbus (bind) bus=system name=org.netsentinel.Scan1,
 
   deny capability net_raw,
   deny capability sys_admin,

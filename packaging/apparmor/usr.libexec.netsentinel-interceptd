@@ -27,6 +27,7 @@
 
   #include <abstractions/dbus-strict>
   dbus (send, receive) bus=system,
+  dbus (bind) bus=system name=org.netsentinel.Intercept1,
 
   deny /home/** rwx,
   deny /root/** rwx,

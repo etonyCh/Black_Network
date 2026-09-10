@@ -36,6 +36,7 @@
   # D-Bus système
   #include <abstractions/dbus-strict>
   dbus (send, receive) bus=system,
+  dbus (bind) bus=system name=org.netsentinel.Discover1,
 
   # Tout le reste est refusé par défaut
   deny /home/** rwx,
