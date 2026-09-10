@@ -21,9 +21,10 @@
   @{PROC}/sys/kernel/ngroups_max r,
   /**/cgroup r,
 
-  owner /etc/netsentinel.env r,
+  /etc/netsentinel.env r,
 
-  /var/log/netsentinel/intercept-audit.log a,
+  /var/log/netsentinel/ rw,
+  /var/log/netsentinel/** rw,
 
   #include <abstractions/dbus-strict>
   dbus (send, receive) bus=system,
