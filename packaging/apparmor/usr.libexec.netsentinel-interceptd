@@ -2,7 +2,7 @@
 
 #include <tunables/global>
 
-/usr/libexec/netsentinel/netsentinel-interceptd {
+/usr/libexec/netsentinel/netsentinel-interceptd flags=(attach_disconnected) {
   #include <abstractions/base>
 
   capability net_raw,

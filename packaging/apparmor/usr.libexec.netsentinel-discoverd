@@ -4,7 +4,7 @@
 
 #include <tunables/global>
 
-/usr/libexec/netsentinel/netsentinel-discoverd {
+/usr/libexec/netsentinel/netsentinel-discoverd flags=(attach_disconnected) {
   #include <abstractions/base>
   #include <abstractions/nameservice>
 

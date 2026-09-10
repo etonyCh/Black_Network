@@ -2,7 +2,7 @@
 
 #include <tunables/global>
 
-/usr/libexec/netsentinel/netsentinel-captured {
+/usr/libexec/netsentinel/netsentinel-captured flags=(attach_disconnected) {
   #include <abstractions/base>
 
   capability bpf,
