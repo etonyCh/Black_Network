@@ -131,7 +131,7 @@ jobs:
           # Préparation environnement
           export DEBEMAIL DEBFULLNAME
           PPA="${PPA_NAME:-netsentinel/ppa-beta}"
-          WS="netsentinel-workspace/netsentinel"
+          WS="."
           cd "$WS"
           echo "=== Workspace Rust $(pwd) ==="
 
@@ -165,7 +165,6 @@ jobs:
           if [ "$SIGNED" = "1" ] && [ -n "$KEYID" ]; then
               echo "📤 Upload vers ppa:$PPA via dput (source=$SRC_CHANGES)"
               (
-                  cd netsentinel-workspace
                   dput --unchecked --force "ppa:$PPA" "$SRC_CHANGES" 2>&1 | tail -20
               )
               RC=$?
@@ -220,7 +219,7 @@ jobs:
       - name: Verify artifact signatures (if present)
         run: |
           ls -la artifacts/ || true
-          ls -la netsentinel-workspace/*.dsc netsentinel-workspace/*_source.changes 2>/dev/null || true
+          ls -la *.dsc *_source.changes 2>/dev/null || true
           echo ""
           echo "BETA: publication exécutée"
           echo "  • PPA status       = ${{ steps.ppa_beta.outputs.status }}"
@@ -378,7 +377,7 @@ jobs:
         run: |
           export DEBEMAIL DEBFULLNAME
           PPA="${PPA_NAME:-netsentinel/ppa}"
-          WS="netsentinel-workspace/netsentinel"
+          WS="."
           cd "$WS"
           echo "=== Workspace Rust $(pwd) ==="
           dch -M -D noble --force-distribution --noquery \
@@ -409,7 +408,6 @@ jobs:
           if [ "$SIGNED" = "1" ] && [ -n "$KEYID" ]; then
               echo "📤 Upload STABLE ppa:$PPA (source=$SRC_CHANGES)"
               (
-                  cd netsentinel-workspace
                   dput --unchecked --force "ppa:$PPA" "$SRC_CHANGES" 2>&1 | tail -20
               )
               RC=$?
@@ -465,7 +463,7 @@ jobs:
       - name: Publish Stable (summary)
         run: |
           ls -la artifacts/ || true
-          ls -la netsentinel-workspace/*.dsc netsentinel-workspace/*_source.changes 2>/dev/null || true
+          ls -la *.dsc *_source.changes 2>/dev/null || true
           echo ""
           echo "============================================================"
           echo " PUBLICATION STABLE — Workflow 1010% COMPLET"

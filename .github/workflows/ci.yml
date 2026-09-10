@@ -36,11 +36,9 @@ jobs:
           components: clippy, rustfmt
 
       - name: Cargo fmt check
-        working-directory: netsentinel-workspace/netsentinel
         run: cargo fmt --check
 
       - name: Cargo clippy check
-        working-directory: netsentinel-workspace/netsentinel
         run: cargo clippy --workspace --exclude netsentinel-capture-ebpf -- -D warnings
 
   # =========================================================================
@@ -62,7 +60,6 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Cargo test workspace
-        working-directory: netsentinel-workspace/netsentinel
         run: cargo test --workspace --exclude netsentinel-capture-ebpf
 
   # =========================================================================
@@ -79,7 +76,6 @@ jobs:
         run: cargo install cargo-audit --locked
 
       - name: Cargo audit scan
-        working-directory: netsentinel-workspace/netsentinel
         run: cargo audit
 
   # =========================================================================
@@ -134,13 +130,11 @@ jobs:
           cargo binstall -y bpf-linker
 
       - name: Cargo build release bins
-        working-directory: netsentinel-workspace/netsentinel
         env:
           AYA_BUILD_SKIP: ""
         run: cargo build --workspace --profile release --bins --exclude netsentinel-capture-ebpf
 
       - name: Assemble .deb staging dir
-        working-directory: netsentinel-workspace/netsentinel
         run: |
           set -euo pipefail
           ARCH="$(dpkg-architecture -qDEB_BUILD_ARCH)"
@@ -228,7 +222,7 @@ jobs:
         run: curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
 
       - name: Generate CycloneDX SBOM
-        run: syft scan --output cyclonedx-json=netsentinel-sbom.cdx.json dir:${{ github.workspace }}/netsentinel-workspace/netsentinel
+        run: syft scan --output cyclonedx-json=netsentinel-sbom.cdx.json dir:${{ github.workspace }}
 
       - name: Upload SBOM artifact
         uses: actions/upload-artifact@v4
