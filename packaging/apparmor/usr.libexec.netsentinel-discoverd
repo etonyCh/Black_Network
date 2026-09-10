@@ -18,12 +18,11 @@
 
   # Accès au socket D-Bus système & proc (chemins absolus et déconnectés)
   /{,var/}run/dbus/system_bus_socket rw,
-  run/dbus/system_bus_socket rw,
+  /**/run/dbus/system_bus_socket rw,
   @{PROC}/@{pid}/cgroup r,
   @{PROC}/@{pid}/stat r,
   @{PROC}/sys/kernel/ngroups_max r,
-  proc/@{pid}/cgroup r,
-  proc/@{pid}/stat r,
+  /**/cgroup r,
 
   # Lecture SEULE données statiques critiques (réseau système + conf)
   /etc/resolv.conf r,
