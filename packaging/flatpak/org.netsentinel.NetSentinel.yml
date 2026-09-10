@@ -60,27 +60,7 @@ separate-locales: false
 
 modules:
   # =================================================================
-  # 1. Dépendances Python (pip, sans accès réseau)
-  # =================================================================
-  - name: python-deps
-    buildsystem: simple
-    build-options:
-      build-args:
-        - --share=network  # autorisé PENDANT le build pour pip install
-    build-commands:
-      - pip3 install --prefix=/app --no-cache-dir --break-system-packages
-          'pydantic>=2.7.0'
-          'cryptography>=42.0.0'
-          'keyring>=25.0.0'
-          'SecretStorage>=3.3'
-          'jeepney>=0.8'
-    cleanup:
-      - /app/lib/python*/site-packages/*.dist-info
-      - /app/lib/python*/site-packages/pip*
-      - /app/bin/pip*
-
-  # =================================================================
-  # 2. Rust toolchain (extension Sdk)
+  # Rust toolchain (extension Sdk) — UI GTK4 / Libadwaita
   # =================================================================
   - name: netsentinel-gtk
     buildsystem: simple
@@ -90,54 +70,42 @@ modules:
         CARGO_HOME: /run/build/netsentinel-gtk/cargo
         RUSTUP_TOOLCHAIN: stable
     build-commands:
-      # Déplace la racine workspace Rust au bon endroit
-      - mv -v "$FLATPAK_BUILDER_BUILDDIR"/netsentinel-workspace/netsentinel /ws
-        || (mkdir -p /ws && cp -a netsentinel-workspace/netsentinel/* /ws/)
-      - cd /ws && pwd && ls -la
-
       # Build le binaire UI (UNIQUEMENT netsentinel = gtk crate)
-      - cargo fetch --locked --manifest-path=/ws/Cargo.toml || true
+      - cargo fetch --locked --manifest-path=Cargo.toml || true
       - >-
         cargo build
-        --manifest-path=/ws/Cargo.toml
+        --manifest-path=Cargo.toml
         --package netsentinel
         --release
         --bin netsentinel
         --locked
         || cargo build
-           --manifest-path=/ws/Cargo.toml
+           --manifest-path=Cargo.toml
            --package netsentinel
            --release
            --bin netsentinel
 
       # Installation
-      - install -Dm0755 /ws/target/release/netsentinel        /app/bin/netsentinel
-      - install -Dm0644 /ws/target/release/netsentinel        /app/libexec/netsentinel || true
-      - find /ws -maxdepth 5 -type f -name "*.desktop" -exec install -Dm0644 {} /app/share/applications/ \; || true
-      - find /ws -path "*/data/*.desktop" -exec install -Dm0644 {} /app/share/applications/ \; || true
-      - find /ws -path "*data*" -name "org.netsentinel.NetSentinel.gschema.xml"
+      - install -Dm0755 target/release/netsentinel /app/bin/netsentinel
+      - find . -path "*/data/*.desktop" -exec install -Dm0644 {} /app/share/applications/ \; || true
+      - find . -path "*data*" -name "org.netsentinel.NetSentinel.gschema.xml"
           -exec install -Dm0644 {} /app/share/glib-2.0/schemas/ \; || true
-      - find / -xdev -path "*data*" -name "org.netsentinel.NetSentinel.gschema.xml" 2>/dev/null
-          -exec install -Dvm0644 {} /app/share/glib-2.0/schemas/ \; || true
 
       # Schémas glib
       - glib-compile-schemas /app/share/glib-2.0/schemas/ || true
 
       # Copie données: vuln DB + référentiel PQC (lecture seule par l'UI)
       - install -d /app/share/netsentinel/data || true
-      - find "$FLATPAK_BUILDER_BUILDDIR" /ws -maxdepth 8 -name "vuln_database.json"
+      - find . -maxdepth 5 -name "vuln_database.json"
           -exec install -Dvm0644 {} /app/share/netsentinel/data/vuln_database.json \; || true
-      - find "$FLATPAK_BUILDER_BUILDDIR" /ws -maxdepth 8 -name "pqc_nist_reference.json"
+      - find . -maxdepth 5 -name "pqc_nist_reference.json"
           -exec install -Dvm0644 {} /app/share/netsentinel/data/pqc_nist_reference.json \; || true
-      - find "$FLATPAK_BUILDER_BUILDDIR" /ws -maxdepth 8 -iname "*netsentinel*.svg*" -o -iname "*netsentinel*.png*"
-          2>/dev/null | head -5
-          | xargs -r -I{} install -Dvm0644 {} /app/share/icons/hicolor/scalable/apps/ 2>/dev/null || true
 
       # Nettoyage artefacts de build Rust
-      - rm -rf /ws/target || true
+      - rm -rf target || true
       - rm -rf "$CARGO_HOME" 2>/dev/null || true
 
-    # Sources : on pointe le dossier racine complet
+    # Sources : racine du dépôt
     sources:
       - type: dir
         path: "../../"
