@@ -1,7 +1,4 @@
 # Profil AppArmor — netsentinel-captured (Capture1)
-# Besoin réel : charger/attacher un programme eBPF (CAP_BPF, CAP_NET_ADMIN,
-# CAP_PERFMON sur noyaux récents) et écrire les exports .pcap dans un
-# répertoire dédié.
 
 #include <tunables/global>
 
@@ -11,32 +8,38 @@
   capability bpf,
   capability net_admin,
   capability perfmon,
-  capability sys_resource,   # verrouillage mémoire pour les maps eBPF (RLIMIT_MEMLOCK)
+  capability sys_resource,
 
   network inet raw,
   network packet raw,
 
   /usr/libexec/netsentinel/netsentinel-captured mr,
 
-  # Programme eBPF embarqué (chargé au démarrage)
+  # Accès au socket D-Bus système & proc
+  /run/dbus/system_bus_socket rw,
+  /var/run/dbus/system_bus_socket rw,
+  @{PROC}/@{pid}/cgroup r,
+  @{PROC}/@{pid}/stat r,
+  @{PROC}/sys/kernel/ngroups_max r,
+
+  # Programme eBPF embarqué
   /usr/libexec/netsentinel/*.o r,
 
-  # Données statiques critiques — LECTURE SEULE (référence PQC pour export)
+  # Données statiques critiques — LECTURE SEULE
   /usr/share/netsentinel/data/vuln_database.json r,
   /usr/share/netsentinel/data/pqc_nist_reference.json r,
   /usr/share/netsentinel/data/checksums.sha256 r,
 
-  # Point de montage bpffs (pinning des maps)
+  # Point de montage bpffs
   /sys/fs/bpf/netsentinel/** rw,
   /sys/kernel/debug/tracing/** r,
 
-  # Exports pcap — répertoire dédié uniquement, jamais $HOME
+  # Exports pcap
   /var/lib/netsentinel/captures/ rw,
   /var/lib/netsentinel/captures/** rw,
 
   #include <abstractions/dbus-strict>
-  dbus (send, receive) bus=system path=/org/netsentinel/Capture1
-       interface=org.netsentinel.Capture1,
+  dbus (send, receive) bus=system,
 
   deny /home/** rwx,
   deny /root/** rwx,
