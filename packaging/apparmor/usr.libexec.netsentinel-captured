@@ -15,12 +15,14 @@
 
   /usr/libexec/netsentinel/netsentinel-captured mr,
 
-  # Accès au socket D-Bus système & proc
-  /run/dbus/system_bus_socket rw,
-  /var/run/dbus/system_bus_socket rw,
+  # Accès au socket D-Bus système & proc (chemins absolus et déconnectés)
+  /{,var/}run/dbus/system_bus_socket rw,
+  run/dbus/system_bus_socket rw,
   @{PROC}/@{pid}/cgroup r,
   @{PROC}/@{pid}/stat r,
   @{PROC}/sys/kernel/ngroups_max r,
+  proc/@{pid}/cgroup r,
+  proc/@{pid}/stat r,
 
   # Programme eBPF embarqué
   /usr/libexec/netsentinel/*.o r,

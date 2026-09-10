@@ -1,0 +1,38 @@
+#!/bin/sh
+set -e
+
+case "$1" in
+    configure)
+        # Création du groupe système netsentinel
+        if ! getent group netsentinel >/dev/null; then
+            groupadd --system netsentinel
+        fi
+
+        # Création des utilisateurs système dédiés
+        for u in netsentinel-discover netsentinel-scan netsentinel-capture netsentinel-intercept; do
+            if ! getent passwd "$u" >/dev/null; then
+                useradd --system --gid netsentinel --no-create-home --shell /bin/false "$u"
+            fi
+        done
+
+        # Création des répertoires de données et logs avec permissions appropriées
+        install -d -m 0755 -o root -g netsentinel /var/lib/netsentinel
+        install -d -m 0770 -o netsentinel-scan -g netsentinel /var/lib/netsentinel/scans
+        install -d -m 0770 -o netsentinel-capture -g netsentinel /var/lib/netsentinel/captures
+        install -d -m 0775 -o root -g netsentinel /var/log/netsentinel
+        install -d -m 0755 -o root -g root /run/netsentinel
+
+        # Rechargement des profils AppArmor
+        if command -v apparmor_parser >/dev/null 2>&1; then
+            apparmor_parser -r /etc/apparmor.d/usr.libexec.netsentinel-* 2>/dev/null || true
+        fi
+
+        # Rechargement de systemd et D-Bus si présents
+        if [ -d /run/systemd/system ]; then
+            systemctl daemon-reload || true
+            systemctl reload dbus || true
+        fi
+    ;;
+esac
+
+exit 0
