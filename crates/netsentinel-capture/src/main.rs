@@ -31,14 +31,12 @@ struct CaptureService {
 }
 
 fn default_pcap_path() -> PathBuf {
-    let base = std::env::var("XDG_DATA_HOME")
+    // System daemons must not write into HOME or /tmp: both locations are
+    // blocked by ProtectHome/PrivateTmp and are not covered by AppArmor.
+    // StateDirectory=netsentinel/captures creates this path for the service.
+    let base = std::env::var_os("NETSENTINEL_CAPTURE_DIR")
         .map(PathBuf::from)
-        .unwrap_or_else(|_| {
-            std::env::var("HOME")
-                .map(|h| PathBuf::from(h).join(".local/share"))
-                .unwrap_or_else(|_| PathBuf::from("/tmp"))
-        })
-        .join("netsentinel/captures");
+        .unwrap_or_else(|| PathBuf::from("/var/lib/netsentinel/captures"));
     let ts = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()

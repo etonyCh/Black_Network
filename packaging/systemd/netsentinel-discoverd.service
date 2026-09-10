@@ -41,7 +41,7 @@ MemoryDenyWriteExecute=yes
 RemoveIPC=yes
 
 # --- Réseau : AF_PACKET requis pour sockets bruts ARP ---
-RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_PACKET
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_PACKET AF_NETLINK
 
 # --- Filtrage syscall (liste blanche) ---
 SystemCallFilter=@system-service

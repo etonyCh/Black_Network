@@ -13,6 +13,7 @@
   network inet raw,
   network inet dgram,
   network packet raw,
+  network netlink raw,
 
   /usr/libexec/netsentinel/netsentinel-discoverd mr,
 

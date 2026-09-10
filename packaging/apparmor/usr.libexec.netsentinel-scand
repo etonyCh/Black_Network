@@ -26,9 +26,9 @@
   /usr/share/netsentinel/data/checksums.sha256 r,
 
   # Exécution des scanners externes en enfants directs uniquement
-  /usr/bin/nmap         Cx -> nmap,
-  /usr/bin/nuclei       Cx -> nuclei,
-  /usr/local/bin/nuclei Cx -> nuclei,
+  /usr/bin/nmap         Px -> nmap,
+  /usr/bin/nuclei       Px -> nuclei,
+  /usr/local/bin/nuclei Px -> nuclei,
 
   /var/lib/netsentinel/scans/ rw,
   /var/lib/netsentinel/scans/** rw,
