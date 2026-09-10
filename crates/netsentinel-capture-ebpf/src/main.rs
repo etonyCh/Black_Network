@@ -83,7 +83,7 @@ fn try_netsentinel_capture_ebpf(ctx: XdpContext) -> Result<u32, ()> {
         padding2: [0; 3],
     };
 
-    EVENTS.output(&ctx, &log, 0);
+    EVENTS.output(&ctx, log, 0);
 
     Ok(xdp_action::XDP_PASS)
 }
