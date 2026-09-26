@@ -15,6 +15,7 @@ User=netsentinel-scan
 Group=netsentinel
 CapabilityBoundingSet=
 NoNewPrivileges=yes
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 # --- Création automatique des dossiers système ---
 StateDirectory=netsentinel/scans
@@ -37,9 +38,9 @@ LockPersonality=yes
 MemoryDenyWriteExecute=yes
 RemoveIPC=yes
 
-ReadWritePaths=-/var/lib/netsentinel/scans
+ReadWritePaths=/var/lib/netsentinel/scans
 
-RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 
 SystemCallFilter=@system-service
 SystemCallFilter=~@privileged @resources @mount @debug @cpu-emulation @obsolete

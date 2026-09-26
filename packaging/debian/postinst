@@ -9,7 +9,7 @@ case "$1" in
         fi
 
         # Création des utilisateurs système dédiés
-        for u in netsentinel-discover netsentinel-scan netsentinel-capture netsentinel-intercept; do
+        for u in netsentinel-discover netsentinel-scan netsentinel-capture; do
             if ! getent passwd "$u" >/dev/null; then
                 useradd --system --gid netsentinel --no-create-home --shell /bin/false "$u"
             fi

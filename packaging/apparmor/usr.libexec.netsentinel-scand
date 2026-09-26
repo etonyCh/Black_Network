@@ -25,10 +25,17 @@
   /usr/share/netsentinel/data/pqc_nist_reference.json r,
   /usr/share/netsentinel/data/checksums.sha256 r,
 
-  # Exécution des scanners externes en enfants directs uniquement
-  /usr/bin/nmap         Px -> nmap,
-  /usr/bin/nuclei       Px -> nuclei,
-  /usr/local/bin/nuclei Px -> nuclei,
+  # Exécution des scanners externes (ix = inherit, compatible NoNewPrivileges;
+  # Px est refusé avec "no new privs")
+  /usr/bin/nmap         ix,
+  /usr/bin/nuclei       ix,
+  /usr/local/bin/nuclei ix,
+
+  # Fichiers nécessaires à nmap en mode hérité
+  /usr/share/nmap/** r,
+  /etc/nmap/** r,
+  /etc/services r,
+  @{PROC}/net/** r,
 
   /var/lib/netsentinel/scans/ rw,
   /var/lib/netsentinel/scans/** rw,
@@ -52,8 +59,15 @@ profile nmap flags=(attach_disconnected) {
   #include <abstractions/nameservice>
   network inet stream,
   network inet6 stream,
+  network inet dgram,
   /usr/bin/nmap mr,
+  /usr/share/nmap/** r,
+  /etc/nmap/** r,
+  /etc/services r,
+  @{PROC}/net/** r,
+  @{PROC}/@{pid}/** r,
   /tmp/** rw,
+  /var/tmp/** rw,
   deny capability net_raw,
 }
 

@@ -43,19 +43,4 @@
     </defaults>
   </action>
 
-  <!-- Interception (ARP spoofing + proxy) : impact élevé, cette action
-       reste volontairement à `auth_admin` sans exception, y compris pour un
-       administrateur déjà authentifié récemment (pas de mise en cache
-       longue de l'autorisation pour ce module précis). -->
-  <action id="org.netsentinel.intercept.run">
-    <description>Démarrer une session d'interception réseau (ARP spoofing)</description>
-    <message>Cette action redirige le trafic d'un tiers vers cette machine. Une autorisation administrateur explicite est requise à chaque session.</message>
-    <defaults>
-      <allow_any>no</allow_any>
-      <allow_inactive>no</allow_inactive>
-      <allow_active>auth_admin</allow_active>
-    </defaults>
-    <annotate key="org.freedesktop.policykit.imply"></annotate>
-  </action>
-
 </policyconfig>

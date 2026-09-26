@@ -1,6 +1,6 @@
 //! netsentinel-proto
 //!
-//! Types et définitions D-Bus partagés entre les 4 démons NetSentinel et le
+//! Types et définitions D-Bus partagés entre les 3 démons NetSentinel et le
 //! client GTK. Ce crate est la SEULE source de vérité pour les noms de bus,
 //! les chemins d'objets et les signatures de méthodes : toute modification
 //! d'une interface se fait ici, jamais en dupliquant les signatures côté
@@ -21,9 +21,6 @@ pub const CAPTURE_OBJECT_PATH: &str = "/org/netsentinel/Capture1";
 pub const SCAN_BUS_NAME: &str = "org.netsentinel.Scan1";
 pub const SCAN_OBJECT_PATH: &str = "/org/netsentinel/Scan1";
 
-pub const INTERCEPT_BUS_NAME: &str = "org.netsentinel.Intercept1";
-pub const INTERCEPT_OBJECT_PATH: &str = "/org/netsentinel/Intercept1";
-
 // ---------------------------------------------------------------------
 // Types de données partagés
 // ---------------------------------------------------------------------
@@ -34,6 +31,8 @@ pub struct DiscoveredHost {
     pub mac: String,
     pub vendor: String,
     pub hostname: String,
+    #[serde(default)]
+    pub os: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, zbus::zvariant::Type)]
@@ -44,6 +43,8 @@ pub struct CapturedPacket {
     pub protocol: String,
     pub length: u32,
     pub unencrypted: bool,
+    pub src_port: u16,
+    pub dst_port: u16,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, zbus::zvariant::Type)]
@@ -117,27 +118,4 @@ pub trait Scan1 {
 
     #[zbus(signal)]
     fn scan_progress(&self, percent: u8, status: String) -> zbus::Result<()>;
-}
-
-#[zbus::proxy(
-    interface = "org.netsentinel.Intercept1",
-    default_service = "org.netsentinel.Intercept1",
-    default_path = "/org/netsentinel/Intercept1"
-)]
-pub trait Intercept1 {
-    /// Demande l'ouverture d'une session d'interception. Le service refuse
-    /// tant que le flux de consentement explicite (voir README) n'a pas été
-    /// validé côté UI et journalisé côté audit.
-    ///
-    /// - `target`: IP victime
-    /// - `authorization_token`: NETSENTINEL_AUTH_TOKEN (RE-01)
-    /// - `operator`: identifiant opérateur pour audit HMAC-SHA256
-    async fn request_session(
-        &self,
-        target: &str,
-        authorization_token: &str,
-        operator: &str,
-    ) -> zbus::Result<bool>;
-
-    async fn end_session(&self) -> zbus::Result<()>;
 }

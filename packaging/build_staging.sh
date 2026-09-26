@@ -16,7 +16,7 @@ mkdir -p "${STAGING_DIR}/etc/systemd/system"
 mkdir -p "${STAGING_DIR}/usr/share/polkit-1/actions"
 
 # Copie des binaires compiliés (release profile)
-BINS=("netsentinel-discoverd" "netsentinel-scand" "netsentinel-captured" "netsentinel-interceptd")
+BINS=("netsentinel-discoverd" "netsentinel-scand" "netsentinel-captured")
 for bin in "${BINS[@]}"; do
     if [ -f "${WORKSPACE_DIR}/target/release/${bin}" ]; then
         install -Dm755 "${WORKSPACE_DIR}/target/release/${bin}" "${STAGING_DIR}/usr/libexec/${bin}"

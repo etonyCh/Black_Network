@@ -35,12 +35,13 @@ RestrictSUIDSGID=yes
 LockPersonality=yes
 RemoveIPC=yes
 
-ReadWritePaths=-/var/lib/netsentinel/captures -/sys/fs/bpf/netsentinel
+ReadWritePaths=/var/lib/netsentinel/captures
 
-RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_PACKET
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_PACKET AF_NETLINK
 
-SystemCallFilter=@system-service @bpf
+SystemCallFilter=@system-service bpf perf_event_open
 SystemCallFilter=~@privileged @mount @debug @cpu-emulation @obsolete
+SystemCallFilter=bpf perf_event_open
 SystemCallErrorNumber=EPERM
 
 [Install]

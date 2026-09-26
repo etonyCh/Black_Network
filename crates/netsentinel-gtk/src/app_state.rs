@@ -1,5 +1,7 @@
+use adw::Toast;
 use netsentinel_core::ledger::AuditLedger;
 use netsentinel_core::session::SessionManager;
+use std::cell::RefCell;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -39,3 +41,21 @@ fn dirs() -> Option<PathBuf> {
 }
 
 pub type SharedState = Arc<AppState>;
+
+thread_local! {
+    static TOAST_OVERLAY: RefCell<Option<adw::ToastOverlay>> = const { RefCell::new(None) };
+}
+
+pub fn set_toast_overlay(overlay: adw::ToastOverlay) {
+    TOAST_OVERLAY.with(|o| *o.borrow_mut() = Some(overlay));
+}
+
+pub fn show_toast(message: &str) {
+    TOAST_OVERLAY.with(|o| {
+        if let Some(overlay) = o.borrow().as_ref() {
+            let toast = Toast::new(message);
+            toast.set_timeout(4);
+            overlay.add_toast(toast);
+        }
+    });
+}

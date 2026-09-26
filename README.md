@@ -1,6 +1,6 @@
 # NetSentinel
 
-NetSentinel is a native GNOME/GTK4 cyber-security & network audit application for Ubuntu 24.04 LTS "Noble Numbat", built in **Rust (2021 edition)** with **Libadwaita** and **GTK4**. It performs L2 network mapping, eBPF packet capture, vulnerability auditing, PQC readiness checks, MitM web interception/replay, active reconnaissance, and secure AI-assisted remediation suggestions via Google Gemini.
+NetSentinel is a native GNOME/GTK4 cyber-security & network audit application for Ubuntu 24.04 LTS "Noble Numbat", built in **Rust (2021 edition)** with **Libadwaita** and **GTK4**. It performs L2 network mapping, eBPF packet capture, vulnerability auditing, PQC readiness checks, active reconnaissance, and secure AI-assisted remediation suggestions via Google Gemini.
 
 ## Key Security Architecture
 
@@ -11,7 +11,6 @@ NetSentinel implements strict privilege separation across a multi-crate Rust Car
   - `netsentinel-discoverd` (`org.netsentinel.Discover1`): L2 ARP network discovery
   - `netsentinel-captured` (`org.netsentinel.Capture1`): Passive eBPF kernel packet capture
   - `netsentinel-scand` (`org.netsentinel.Scan1`): Port scan & CVE vulnerability audit
-  - `netsentinel-interceptd` (`org.netsentinel.Intercept1`): MitM HTTP/HTTPS proxy & replay
 
 For full details, see the [NetSentinel Specification](docs/cahier-des-charges/NetSentinel_Cahier_des_Charges_v2.md).
 
@@ -28,7 +27,6 @@ For full details, see the [NetSentinel Specification](docs/cahier-des-charges/Ne
 │   ├── netsentinel-capture-ebpf/ # Kernel eBPF bytecode source
 │   ├── netsentinel-capture-common/ # Shared kernel/userspace eBPF types
 │   ├── netsentinel-scan/      # Vulnerability scanner daemon (netsentinel-scand)
-│   ├── netsentinel-intercept/ # Web proxy interceptor daemon (netsentinel-interceptd)
 │   └── netsentinel-gtk/       # GTK4 / Libadwaita user interface (netsentinel)
 ├── data/                      # GSettings schemas, desktop files, PQC & CVE databases
 ├── docs/                      # Specification & 12 STRIDE threat model documents

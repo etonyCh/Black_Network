@@ -31,13 +31,17 @@
   /usr/share/netsentinel/data/pqc_nist_reference.json r,
   /usr/share/netsentinel/data/checksums.sha256 r,
 
-  # Point de montage bpffs
+  # Point de montage bpffs (optionnel, pinning non utilisé)
+  /sys/fs/bpf/ r,
+  /sys/fs/bpf/netsentinel/ rw,
   /sys/fs/bpf/netsentinel/** rw,
   /sys/kernel/debug/tracing/** r,
 
   # Exports pcap
   /var/lib/netsentinel/captures/ rw,
-  /var/lib/netsentinel/captures/** rw,
+  /var/lib/netsentinel/captures/** rwk,
+  /tmp/netsentinel-captures/ rw,
+  /tmp/netsentinel-captures/** rwk,
 
   #include <abstractions/dbus-strict>
   dbus (send, receive) bus=system,

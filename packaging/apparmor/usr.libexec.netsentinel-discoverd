@@ -28,11 +28,25 @@
   # Lecture SEULE données statiques critiques (réseau système + conf)
   /etc/resolv.conf r,
   /sys/class/net/** r,
+  /sys/devices/** r,
+  @{PROC}/net/** r,
+  @{PROC}/sys/net/** r,
 
   # Données vulnérabilités + PQC
   /usr/share/netsentinel/data/vuln_database.json r,
   /usr/share/netsentinel/data/pqc_nist_reference.json r,
   /usr/share/netsentinel/data/checksums.sha256 r,
+  /usr/share/nmap/nmap-mac-prefixes r,
+  /usr/share/nmap/** r,
+  /usr/share/wireshark/manuf r,
+  /var/lib/ieee-data/oui.txt r,
+
+  # Résolution hostname via NSS (hérité, compatible NoNewPrivileges)
+  /usr/bin/getent ix,
+  /usr/bin/avahi-resolve ix,
+  /usr/bin/ping ix,
+  /etc/hosts r,
+  /etc/nsswitch.conf r,
 
   # D-Bus système
   #include <abstractions/dbus-strict>

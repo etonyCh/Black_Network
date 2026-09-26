@@ -5,11 +5,12 @@
 pub struct PacketLog {
     pub src_addr: u32,
     pub dst_addr: u32,
+    pub src_port: u16,
+    pub dst_port: u16,
     pub protocol: u8,
-    pub padding: [u8; 3],
-    pub length: u32,
     pub unencrypted: u8,
-    pub padding2: [u8; 3],
+    pub length: u32,
+    pub _pad: [u8; 2],
 }
 
 #[cfg(feature = "user")]

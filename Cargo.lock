@@ -1670,6 +1670,7 @@ name = "netsentinel"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "chrono",
  "futures",
  "futures-util",
  "gtk4",
@@ -1753,29 +1754,6 @@ dependencies = [
  "netsentinel-proto",
  "pnet",
  "pnet_datalink",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "zbus",
-]
-
-[[package]]
-name = "netsentinel-interceptd"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "chrono",
- "hex",
- "netsentinel-core",
- "netsentinel-proto",
- "pnet",
- "pnet_base",
- "pnet_datalink",
- "pnet_packet",
- "ring",
- "serde",
- "serde_json",
- "tempfile",
  "tokio",
  "tracing",
  "tracing-subscriber",

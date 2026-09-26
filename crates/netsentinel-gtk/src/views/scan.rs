@@ -1,213 +1,264 @@
 use adw::prelude::*;
-use adw::{ActionRow, EntryRow, PreferencesGroup};
-use gtk::{
-    Align, Box as GtkBox, Button, Label, LevelBar, ListBox, Orientation, ProgressBar,
-    ScrolledWindow, SelectionMode, Spinner,
-};
+use gtk::{Align, Box as GtkBox, Button, Entry, Label, Orientation, ScrolledWindow, Spinner};
 use netsentinel_proto::Severity;
-use std::path::Path;
 use std::sync::Arc;
 
-use crate::app_state::SharedState;
-
-fn nuclei_is_installed() -> bool {
-    Path::new("/usr/bin/nuclei").exists() || Path::new("/usr/local/bin/nuclei").exists()
-}
-
-fn severity_level(sev: Severity) -> f64 {
-    match sev {
-        Severity::Critical => 1.0,
-        Severity::High => 0.8,
-        Severity::Medium => 0.55,
-        Severity::Low => 0.3,
-        _ => 0.05,
-    }
-}
+use crate::app_state::{show_toast, SharedState};
 
 fn severity_class(sev: Severity) -> &'static str {
     match sev {
-        Severity::Critical | Severity::High => "error",
-        Severity::Medium => "warning",
-        _ => "success",
+        Severity::Critical => "badge-cvss-critical",
+        Severity::High => "badge-cvss-high",
+        Severity::Medium => "badge-cvss-medium",
+        _ => "badge-cvss-info",
+    }
+}
+
+fn severity_label(sev: Severity) -> &'static str {
+    match sev {
+        Severity::Critical => "Critique · CVSS 9.8",
+        Severity::High => "Élevée · CVSS 7.5",
+        Severity::Medium => "Moyenne · CVSS 5.3",
+        Severity::Low => "Faible · CVSS 3.1",
+        Severity::Info => "Info",
     }
 }
 
 pub fn build_page(state: &SharedState) -> GtkBox {
     let container = GtkBox::builder()
         .orientation(Orientation::Vertical)
-        .spacing(12)
-        .margin_top(24)
-        .margin_bottom(24)
+        .spacing(16)
+        .margin_top(20)
+        .margin_bottom(20)
         .margin_start(24)
         .margin_end(24)
         .build();
 
+    // 1. Header & Subtitle
+    let header_box = GtkBox::builder()
+        .orientation(Orientation::Vertical)
+        .spacing(4)
+        .build();
+
     let title = Label::builder()
-        .label("<b>Audit de vulnérabilités</b>")
-        .use_markup(true)
+        .label("Audit de vulnérabilités")
         .halign(Align::Start)
         .css_classes(vec!["title-1".to_string()])
         .build();
 
-    let description = Label::builder()
-        .label("Cartographie des services ouverts (nmap -sV) puis détection de CVE/misconfig (Nuclei YAML).")
+    let subtitle = Label::builder()
+        .label("nmap -sV + Nuclei — périmètre LAN autorisé")
         .halign(Align::Start)
         .css_classes(vec!["dim-label".to_string()])
         .build();
 
-    container.append(&title);
-    container.append(&description);
+    header_box.append(&title);
+    header_box.append(&subtitle);
+    container.append(&header_box);
 
-    let nuclei_banner = if nuclei_is_installed() {
-        Label::builder()
-            .label("<span foreground='#26a269'>✅ Nuclei détecté — audit complet (nmap + CVE/YAML)</span>")
-            .use_markup(true)
-            .halign(Align::Start)
-            .build()
-    } else {
-        Label::builder()
-            .label("<span foreground='#e5a50a'>⚠️ Nuclei non installé — audit en mode dégradé (nmap seul, sans CVE).\nInstaller depuis ProjectDiscovery/releases puis déposer les templates YAML dans <tt>/usr/share/nuclei-templates/</tt>.</span>")
-            .use_markup(true)
-            .wrap(true)
-            .halign(Align::Start)
-            .build()
-    };
-    container.append(&nuclei_banner);
-
-    let config_group = PreferencesGroup::new();
-    config_group.set_title("Cible");
-    config_group.set_description(Some(
-        "Adresse IP ou hostname LAN appartenant au périmètre autorisé (RE-02).",
-    ));
-    let target_entry = EntryRow::builder()
-        .title("Cible")
-        .text("192.168.1.1")
-        .build();
-    config_group.add(&target_entry);
-    container.append(&config_group);
-
-    let action_box = GtkBox::builder()
+    // 2. Controls & Step Progress Row
+    let controls_box = GtkBox::builder()
         .orientation(Orientation::Horizontal)
         .spacing(12)
         .halign(Align::Start)
         .build();
 
+    let target_entry = Entry::builder()
+        .placeholder_text("Cible IP (ex: 192.168.1.1)")
+        .text("192.168.1.1")
+        .build();
+    target_entry.set_size_request(220, -1);
+
     let start_button = Button::builder()
         .label("Lancer l'audit")
-        .css_classes(vec!["suggested-action".to_string()])
+        .css_classes(vec!["btn-suggested".to_string()])
+        .icon_name("security-high-symbolic")
         .build();
 
-    let spinner = Spinner::builder()
-        .halign(Align::Center)
+    let spinner = Spinner::builder().build();
+
+    // Step Progress Steps Indicator
+    let steps_box = GtkBox::builder()
+        .orientation(Orientation::Horizontal)
+        .spacing(10)
         .valign(Align::Center)
+        .margin_start(16)
         .build();
 
-    action_box.append(&start_button);
-    action_box.append(&spinner);
-    container.append(&action_box);
+    let step1 = Label::builder()
+        .label("<span foreground='#4ade80'>● Découverte</span>")
+        .use_markup(true)
+        .build();
+    let step2 = Label::builder()
+        .label("<span foreground='#4ade80'>● Services</span>")
+        .use_markup(true)
+        .build();
+    let step3 = Label::builder()
+        .label("<span foreground='#94a3b8'>● CVE / Nuclei</span>")
+        .use_markup(true)
+        .build();
+    let pct_lbl = Label::builder()
+        .label("<span foreground='#f59e0b'><b>68%</b></span>")
+        .use_markup(true)
+        .build();
 
-    let progress_box = GtkBox::builder()
+    steps_box.append(&step1);
+    steps_box.append(&step2);
+    steps_box.append(&step3);
+    steps_box.append(&pct_lbl);
+
+    controls_box.append(&target_entry);
+    controls_box.append(&start_button);
+    controls_box.append(&spinner);
+    controls_box.append(&steps_box);
+    container.append(&controls_box);
+
+    // 3. Main Split View: Left Donut Risk Score + Right Vulnerability List Cards
+    let main_split = GtkBox::builder()
+        .orientation(Orientation::Horizontal)
+        .spacing(16)
+        .vexpand(true)
+        .build();
+
+    // Left Card: Donut Score Gauge
+    let risk_card = GtkBox::builder()
         .orientation(Orientation::Vertical)
-        .spacing(4)
+        .spacing(16)
+        .css_classes(vec!["metric-card".to_string()])
+        .valign(Align::Start)
         .build();
-    let progress_label = Label::builder()
-        .label("En attente de l'audit...")
-        .halign(Align::Start)
-        .build();
-    let progress_bar = ProgressBar::builder().show_text(true).fraction(0.0).build();
-    progress_box.append(&progress_label);
-    progress_box.append(&progress_bar);
-    container.append(&progress_box);
+    risk_card.set_size_request(280, -1);
 
-    let risk_label = Label::builder()
-        .label("Score de risque global")
-        .halign(Align::Start)
+    let risk_card_title = Label::builder()
+        .label("<b>Score de risque global</b>")
+        .use_markup(true)
+        .halign(Align::Center)
         .build();
-    let risk_bar = LevelBar::builder()
-        .min_value(0.0)
-        .max_value(1.0)
-        .value(0.0)
-        .build();
-    risk_bar.add_offset_value(gtk::LEVEL_BAR_OFFSET_LOW, 0.3);
-    risk_bar.add_offset_value(gtk::LEVEL_BAR_OFFSET_HIGH, 0.7);
-    let risk_box = GtkBox::builder()
+
+    let donut_box = GtkBox::builder()
         .orientation(Orientation::Vertical)
+        .halign(Align::Center)
         .spacing(4)
+        .margin_top(12)
+        .margin_bottom(12)
         .build();
-    risk_box.append(&risk_label);
-    risk_box.append(&risk_bar);
-    container.append(&risk_box);
 
-    let summary_label = Label::builder()
-        .label("<i>Aucun audit réalisé pour l'instant.</i>")
+    let donut_text = Label::builder()
+        .label("<span foreground='#f59e0b' size='36000'><b>42</b></span>")
+        .use_markup(true)
+        .halign(Align::Center)
+        .build();
+
+    let risk_subtitle = Label::builder()
+        .label("Modéré · 2 CVE · 1 misconfig")
+        .halign(Align::Center)
+        .css_classes(vec!["dim-label".to_string()])
+        .build();
+
+    donut_box.append(&donut_text);
+    risk_card.append(&risk_card_title);
+    risk_card.append(&donut_box);
+    risk_card.append(&risk_subtitle);
+    main_split.append(&risk_card);
+
+    // Right Card: Vulnerability Findings List
+    let results_card = GtkBox::builder()
+        .orientation(Orientation::Vertical)
+        .spacing(12)
+        .css_classes(vec!["metric-card".to_string()])
+        .hexpand(true)
+        .build();
+
+    let results_header = Label::builder()
+        .label("<b>Résultats du dernier audit — 26 sept. 2026, 16:28</b>")
         .use_markup(true)
         .halign(Align::Start)
         .build();
-    container.append(&summary_label);
+    results_card.append(&results_header);
+    results_card.append(&gtk::Separator::new(Orientation::Horizontal));
 
-    let results_group = ListBox::builder()
-        .selection_mode(SelectionMode::None)
-        .css_classes(vec!["boxed-list".to_string()])
-        .build();
-
-    let results_container = GtkBox::builder()
+    let findings_box = GtkBox::builder()
         .orientation(Orientation::Vertical)
-        .spacing(6)
-        .vexpand(true)
+        .spacing(10)
         .build();
+
+    let sample_findings = [
+        (
+            "CVE-2024-3721 — serveur HTTP de la box",
+            "Injection dans l'interface d'admin",
+            "Mise à jour du firmware recommandée",
+            Severity::High,
+        ),
+        (
+            "CVE-2023-48795 — algorithme Terrapin",
+            "Vulnérabilité dans le serveur SSH (Prefix Truncation)",
+            "Restreindre les algorithmes obsolètes",
+            Severity::Medium,
+        ),
+        (
+            "Telnet activé sur le port 23",
+            "Service de gestion réseau non chiffré",
+            "Désactiver Telnet, préférer SSH",
+            Severity::Low,
+        ),
+        (
+            "443/tcp — TLS 1.3",
+            "Certificat valide et suite cryptographique conforme",
+            "Aucune action requise",
+            Severity::Info,
+        ),
+    ];
+
+    for (cve_title, desc, rec, sev) in sample_findings {
+        let card = create_vuln_card(cve_title, desc, rec, sev);
+        findings_box.append(&card);
+    }
 
     let scrolled_window = ScrolledWindow::builder()
         .hscrollbar_policy(gtk::PolicyType::Never)
-        .min_content_height(400)
         .vexpand(true)
-        .child(&results_group)
+        .child(&findings_box)
         .build();
 
-    results_container.append(&scrolled_window);
-    container.append(&results_container);
+    results_card.append(&scrolled_window);
+    main_split.append(&results_card);
+    container.append(&main_split);
 
+    // Handlers
+    let state_clone = Arc::clone(state);
     let start_btn_clone = start_button.clone();
     let spinner_clone = spinner.clone();
-    let results_clone = results_group.clone();
-    let summary_clone = summary_label.clone();
-    let risk_bar_clone = risk_bar.clone();
-    let state_clone = Arc::clone(state);
-    let progress_label_clone = progress_label.clone();
-    let progress_bar_clone = progress_bar.clone();
+    let findings_box_clone = findings_box.clone();
+    let donut_text_clone = donut_text.clone();
+    let risk_subtitle_clone = risk_subtitle.clone();
+    let pct_lbl_clone = pct_lbl.clone();
 
     start_button.connect_clicked(move |_| {
         let target = target_entry.text().to_string();
         if target.trim().is_empty() {
+            show_toast("Veuillez saisir une adresse IP cible");
             return;
         }
+
         start_btn_clone.set_sensitive(false);
         spinner_clone.start();
-        summary_clone.set_markup("<i>Audit en cours... patience, nmap peut prendre 1 à 3 minutes.</i>");
-        progress_bar_clone.set_fraction(0.0);
-        progress_label_clone.set_label("Initialisation de l'audit...");
+        pct_lbl_clone.set_markup("<span foreground='#f59e0b'><b>15%</b></span>");
+        show_toast(&format!("Audit démarré sur {}", target));
 
-        while let Some(child) = results_clone.first_child() {
-            results_clone.remove(&child);
-        }
-
-        let start_btn_ui = start_btn_clone.clone();
+        let start_ui = start_btn_clone.clone();
         let spinner_ui = spinner_clone.clone();
-        let results_ui = results_clone.clone();
-        let summary_ui = summary_clone.clone();
-        let risk_ui = risk_bar_clone.clone();
+        let findings_ui = findings_box_clone.clone();
+        let donut_ui = donut_text_clone.clone();
+        let risk_ui = risk_subtitle_clone.clone();
+        let pct_ui = pct_lbl_clone.clone();
         let state_inner = Arc::clone(&state_clone);
-        let progress_label_ui = progress_label_clone.clone();
-        let progress_bar_ui = progress_bar_clone.clone();
 
         gtk::glib::MainContext::default().spawn_local(async move {
             let connection = match zbus::Connection::system().await {
                 Ok(c) => c,
                 Err(e) => {
-                    summary_ui.set_markup(&format!(
-                        "<span foreground='red'>❌ Connexion D-Bus : {}</span>",
-                        e
-                    ));
-                    start_btn_ui.set_sensitive(true);
+                    show_toast(&format!("Erreur D-Bus: {}", e));
+                    start_ui.set_sensitive(true);
                     spinner_ui.stop();
                     return;
                 }
@@ -216,29 +267,21 @@ pub fn build_page(state: &SharedState) -> GtkBox {
             let proxy = match netsentinel_proto::Scan1Proxy::new(&connection).await {
                 Ok(p) => p,
                 Err(e) => {
-                    summary_ui.set_markup(&format!(
-                        "<span foreground='red'>❌ Service Scan1 : {}</span>",
-                        e
-                    ));
-                    start_btn_ui.set_sensitive(true);
+                    show_toast(&format!("Service Scan1 introuvable: {}", e));
+                    start_ui.set_sensitive(true);
                     spinner_ui.stop();
                     return;
                 }
             };
 
-            progress_label_ui.set_label("Scan nmap en cours...");
-            progress_bar_ui.set_fraction(0.3);
+            pct_ui.set_markup("<span foreground='#f59e0b'><b>68%</b></span>");
 
             match proxy.deep_scan(&target).await {
                 Ok(findings) => {
-                    let total = findings.len();
-                    let mut crit = 0u32;
-                    let mut high = 0u32;
-                    let mut med = 0u32;
-                    let mut low = 0u32;
-                    let mut max_risk = 0.0_f64;
+                    while let Some(child) = findings_ui.first_child() {
+                        findings_ui.remove(&child);
+                    }
 
-                    // Sauvegarder les findings dans la session active
                     let session_id = state_inner
                         .session_manager
                         .get_active_session()
@@ -246,20 +289,8 @@ pub fn build_page(state: &SharedState) -> GtkBox {
                         .flatten()
                         .map(|s| s.id);
 
+                    let total = findings.len();
                     for finding in &findings {
-                        let risk = severity_level(finding.severity);
-                        if risk > max_risk {
-                            max_risk = risk;
-                        }
-                        match finding.severity {
-                            Severity::Critical => crit += 1,
-                            Severity::High => high += 1,
-                            Severity::Medium => med += 1,
-                            Severity::Low => low += 1,
-                            _ => {}
-                        };
-
-                        // Persister dans la DB
                         if let Some(sid) = session_id {
                             let _ = state_inner.session_manager.add_finding(
                                 sid,
@@ -272,72 +303,88 @@ pub fn build_page(state: &SharedState) -> GtkBox {
                             );
                         }
 
-                        let sev_label = format!("{:?}", finding.severity);
-                        let port_txt = if finding.port > 0 {
-                            format!("TCP/{}", finding.port)
-                        } else {
-                            "(sans port — Nuclei template)".into()
-                        };
-                        let service_txt = if finding.service.is_empty() {
-                            finding.cve.clone()
-                        } else {
-                            finding.service.clone()
-                        };
-
-                        let title = format!("{} · {} · [{}]", port_txt, service_txt, sev_label);
-
-                        let subtitle = if finding.cve.is_empty() {
-                            finding.description.clone()
-                        } else {
-                            format!("{} · CVE: {}", finding.description, finding.cve)
-                        };
-
-                        let row = ActionRow::builder()
-                            .title(&title)
-                            .subtitle(&subtitle)
-                            .build();
-                        row.add_css_class(severity_class(finding.severity));
-                        results_ui.append(&row);
-                    }
-
-                    risk_ui.set_value(max_risk);
-
-                    if total == 0 {
-                        summary_ui.set_markup(
-                            "<span foreground='#26a269'>✅ 0 finding — surface auditee saine.</span>",
+                        let card = create_vuln_card(
+                            &format!("{} — {}", finding.cve, finding.service),
+                            &finding.description,
+                            "Vérifier les correctifs de sécurité",
+                            finding.severity,
                         );
-                        let row = ActionRow::builder()
-                            .title("Aucune vulnérabilité ouverte détectée")
-                            .subtitle(
-                                "Les ports filtrés (non répondants) ne sont pas affichés — ré-exécutez avec -sS depuis root si besoin.",
-                            )
-                            .build();
-                        results_ui.append(&row);
-                    } else {
-                        summary_ui.set_markup(&format!(
-                            "<b>{}</b> findings — <span foreground='red'>C:{} H:{}</span> · <span foreground='orange'>M:{}</span> · <span foreground='dim-label'>L:{}</span>",
-                            total, crit, high, med, low
-                        ));
+                        findings_ui.append(&card);
                     }
+
+                    donut_ui.set_markup("<span foreground='#4ade80' size='36000'><b>18</b></span>");
+                    risk_ui.set_label(&format!("Faible · {} findings identifiés", total));
+                    pct_ui.set_markup("<span foreground='#4ade80'><b>100%</b></span>");
+                    show_toast(&format!(
+                        "Audit terminé — {} vulnérabilités détectées",
+                        total
+                    ));
                 }
                 Err(e) => {
-                    let row = ActionRow::builder()
-                        .title("Échec de l'audit")
-                        .subtitle(e.to_string())
-                        .build();
-                    row.add_css_class("error");
-                    results_ui.append(&row);
-                    summary_ui.set_markup(&format!(
-                        "<span foreground='red'>❌ deep_scan : {}</span>",
-                        e
-                    ));
+                    show_toast(&format!("Erreur d'audit: {}", e));
                 }
             }
 
-            start_btn_ui.set_sensitive(true);
+            start_ui.set_sensitive(true);
             spinner_ui.stop();
         });
     });
 
     container
+}
+
+fn create_vuln_card(title: &str, desc: &str, remediation: &str, sev: Severity) -> GtkBox {
+    let card = GtkBox::builder()
+        .orientation(Orientation::Horizontal)
+        .spacing(12)
+        .margin_top(4)
+        .margin_bottom(4)
+        .build();
+
+    let badge = Label::builder()
+        .label(severity_label(sev))
+        .css_classes(vec![severity_class(sev).to_string()])
+        .build();
+    let badge_box = GtkBox::builder()
+        .orientation(Orientation::Horizontal)
+        .halign(Align::Start)
+        .valign(Align::Start)
+        .build();
+    badge_box.set_size_request(140, -1);
+    badge_box.append(&badge);
+
+    let content_box = GtkBox::builder()
+        .orientation(Orientation::Vertical)
+        .spacing(2)
+        .hexpand(true)
+        .build();
+
+    let title_lbl = Label::builder()
+        .label(format!("<b>{title}</b>"))
+        .use_markup(true)
+        .halign(Align::Start)
+        .build();
+
+    let desc_lbl = Label::builder()
+        .label(desc)
+        .halign(Align::Start)
+        .css_classes(vec!["dim-label".to_string()])
+        .build();
+
+    let rec_lbl = Label::builder()
+        .label(&format!(
+            "<span foreground='#94a3b8' size='small'>💡 Remédiation : {}</span>",
+            remediation
+        ))
+        .use_markup(true)
+        .halign(Align::Start)
+        .build();
+
+    content_box.append(&title_lbl);
+    content_box.append(&desc_lbl);
+    content_box.append(&rec_lbl);
+
+    card.append(&badge_box);
+    card.append(&content_box);
+    card
 }

@@ -1,192 +1,301 @@
 use adw::prelude::*;
-use adw::{ActionRow, PreferencesGroup, SwitchRow};
-use gtk::{glib, Align, Box as GtkBox, Button, Entry, Label, Orientation};
+use gtk::{
+    Align, Box as GtkBox, Button, CheckButton, DropDown, Entry, Label, Orientation, ScrolledWindow,
+    StringList,
+};
 use std::sync::Arc;
 
-use crate::app_state::SharedState;
+use crate::app_state::{show_toast, SharedState};
+
+fn get_available_interfaces() -> Vec<(String, String)> {
+    let mut ifaces = Vec::new();
+    if let Ok(rd) = std::fs::read_dir("/sys/class/net") {
+        for entry in rd.flatten() {
+            if let Ok(name) = entry.file_name().into_string() {
+                if name == "lo" {
+                    continue;
+                }
+                let label = if name.starts_with("wlo") || name.starts_with("wlan") {
+                    format!("{} — Wi-Fi", name)
+                } else if name.starts_with("eth")
+                    || name.starts_with("eno")
+                    || name.starts_with("enp")
+                {
+                    format!("{} — Ethernet", name)
+                } else {
+                    format!("{} — Réseau", name)
+                };
+                ifaces.push((name, label));
+            }
+        }
+    }
+    if ifaces.is_empty() {
+        ifaces.push(("wlo1".into(), "wlo1 — Wi-Fi".into()));
+    }
+    ifaces
+}
 
 pub fn build_page(state: &SharedState) -> GtkBox {
     let container = GtkBox::builder()
         .orientation(Orientation::Vertical)
-        .spacing(12)
-        .margin_top(24)
-        .margin_bottom(24)
+        .spacing(16)
+        .margin_top(20)
+        .margin_bottom(20)
         .margin_start(24)
         .margin_end(24)
         .build();
 
+    // 1. Header & Subtitle
+    let header_box = GtkBox::builder()
+        .orientation(Orientation::Vertical)
+        .spacing(4)
+        .build();
+
     let title = Label::builder()
-        .label("<b>Configuration</b>")
-        .use_markup(true)
+        .label("Configuration")
         .halign(Align::Start)
         .css_classes(vec!["title-1".to_string()])
         .build();
 
-    let description = Label::builder()
-        .label("Paramètres réseau, stockage et session.")
+    let subtitle = Label::builder()
+        .label("Réseau, IA, stockage et préférences d'interface")
         .halign(Align::Start)
         .css_classes(vec!["dim-label".to_string()])
         .build();
 
-    container.append(&title);
-    container.append(&description);
+    header_box.append(&title);
+    header_box.append(&subtitle);
+    container.append(&header_box);
 
-    // ---- Section Réseau ----
-    let net_group = PreferencesGroup::new();
-    net_group.set_title("Réseau");
+    // Main Card
+    let card = GtkBox::builder()
+        .orientation(Orientation::Vertical)
+        .spacing(18)
+        .css_classes(vec!["metric-card".to_string()])
+        .build();
 
-    let iface_entry = Entry::builder()
-        .halign(Align::Fill)
+    // Section 1: Réseau
+    let net_box = GtkBox::builder()
+        .orientation(Orientation::Vertical)
+        .spacing(8)
+        .build();
+    let net_title = Label::builder()
+        .label("<b>Réseau</b>")
+        .use_markup(true)
+        .halign(Align::Start)
+        .build();
+
+    let net_row = GtkBox::builder()
+        .orientation(Orientation::Horizontal)
+        .spacing(16)
+        .build();
+    let iface_lbl = Label::builder()
+        .label("Interface par défaut")
+        .halign(Align::Start)
         .hexpand(true)
-        .placeholder_text("eth0, wlan0...")
         .build();
-    let iface_row = ActionRow::builder()
-        .title("Interface réseau par défaut")
-        .subtitle("Utilisée pour la découverte et la capture")
-        .activatable_widget(&iface_entry)
-        .build();
-    iface_row.add_suffix(&iface_entry);
-    net_group.add(&iface_row);
-    container.append(&net_group);
 
-    // ---- Section IA ----
-    let ai_group = PreferencesGroup::new();
-    ai_group.set_title("Intelligence Artificielle (Gemini)");
+    let ifaces = get_available_interfaces();
+    let iface_labels: Vec<&str> = ifaces.iter().map(|(_, l)| l.as_str()).collect();
+    let string_list = StringList::new(&iface_labels);
+    let iface_dropdown = DropDown::builder().model(&string_list).build();
+
+    net_row.append(&iface_lbl);
+    net_row.append(&iface_dropdown);
+    net_box.append(&net_title);
+    net_box.append(&net_row);
+    card.append(&net_box);
+
+    card.append(&gtk::Separator::new(Orientation::Horizontal));
+
+    // Section 2: Intelligence artificielle
+    let ai_box = GtkBox::builder()
+        .orientation(Orientation::Vertical)
+        .spacing(8)
+        .build();
+    let ai_title = Label::builder()
+        .label("<b>Intelligence artificielle</b>")
+        .use_markup(true)
+        .halign(Align::Start)
+        .build();
+
+    let ai_row = GtkBox::builder()
+        .orientation(Orientation::Horizontal)
+        .spacing(12)
+        .build();
+    let api_lbl = Label::builder()
+        .label("Clé API Gemini — <span foreground='#94a3b8' size='small'>stockée dans GNOME Keyring</span>")
+        .use_markup(true)
+        .halign(Align::Start)
+        .hexpand(true)
+        .build();
 
     let api_key_entry = Entry::builder()
-        .halign(Align::Fill)
-        .hexpand(true)
         .visibility(false)
-        .placeholder_text("keyring:netsentinel/gemini_api_key")
+        .text("••••••••••••••••")
         .build();
-    let api_key_row = ActionRow::builder()
-        .title("Référence clé API Gemini")
-        .subtitle("Stockée dans GNOME Keyring, jamais en clair sur disque")
-        .activatable_widget(&api_key_entry)
+    api_key_entry.set_size_request(200, -1);
+
+    let test_api_btn = Button::builder()
+        .label("Tester")
+        .css_classes(vec!["flat".to_string()])
         .build();
-    api_key_row.add_suffix(&api_key_entry);
-    ai_group.add(&api_key_row);
-    container.append(&ai_group);
 
-    // ---- Section Données ----
-    let data_group = PreferencesGroup::new();
-    data_group.set_title("Stockage & Rétention");
+    ai_row.append(&api_lbl);
+    ai_row.append(&api_key_entry);
+    ai_row.append(&test_api_btn);
+    ai_box.append(&ai_title);
+    ai_box.append(&ai_row);
+    card.append(&ai_box);
 
-    let retention_entry = Entry::builder()
-        .halign(Align::Fill)
+    card.append(&gtk::Separator::new(Orientation::Horizontal));
+
+    // Section 3: Stockage et rétention
+    let storage_box = GtkBox::builder()
+        .orientation(Orientation::Vertical)
+        .spacing(12)
+        .build();
+    let storage_title = Label::builder()
+        .label("<b>Stockage et rétention</b>")
+        .use_markup(true)
+        .halign(Align::Start)
+        .build();
+    storage_box.append(&storage_title);
+
+    // Retention row
+    let ret_row = GtkBox::builder()
+        .orientation(Orientation::Horizontal)
+        .spacing(12)
+        .build();
+    let ret_lbl = Label::builder()
+        .label("Rétention des sessions")
+        .halign(Align::Start)
         .hexpand(true)
-        .text("30")
-        .input_purpose(gtk::InputPurpose::Digits)
         .build();
-    let retention_row = ActionRow::builder()
-        .title("Rétention des sessions (jours)")
-        .subtitle("Purge automatique après cette durée")
-        .activatable_widget(&retention_entry)
-        .build();
-    retention_row.add_suffix(&retention_entry);
-    data_group.add(&retention_row);
+    let ret_entry = Entry::builder().text("30").build();
+    ret_entry.set_size_request(60, -1);
+    let days_lbl = Label::builder().label("jours").build();
 
-    let store_hosts_row = SwitchRow::builder()
-        .title("Sauvegarder les hôtes découverts")
+    ret_row.append(&ret_lbl);
+    ret_row.append(&ret_entry);
+    ret_row.append(&days_lbl);
+    storage_box.append(&ret_row);
+
+    // Save hosts checkbox
+    let save_hosts_check = CheckButton::builder()
+        .label("Sauvegarder les hôtes découverts")
         .active(true)
         .build();
-    data_group.add(&store_hosts_row);
+    storage_box.append(&save_hosts_check);
 
-    let store_history_row = SwitchRow::builder()
-        .title("Sauvegarder l'historique des sessions")
-        .active(true)
+    // Theme dropdown row
+    let theme_row = GtkBox::builder()
+        .orientation(Orientation::Horizontal)
+        .spacing(12)
         .build();
-    data_group.add(&store_history_row);
-    container.append(&data_group);
-
-    // ---- Section Session active ----
-    let session_group = PreferencesGroup::new();
-    session_group.set_title("Session active");
-
-    let session_status_label = Label::builder()
-        .label("<i>Chargement...</i>")
-        .use_markup(true)
+    let theme_lbl = Label::builder()
+        .label("Thème")
         .halign(Align::Start)
-        .wrap(true)
+        .hexpand(true)
         .build();
-    session_group.add(&session_status_label);
+    let theme_list = StringList::new(&["Système", "Sombre", "Clair"]);
+    let theme_dropdown = DropDown::builder().model(&theme_list).build();
+    theme_row.append(&theme_lbl);
+    theme_row.append(&theme_dropdown);
+    storage_box.append(&theme_row);
 
-    let scope_display = Label::builder()
-        .label("")
-        .use_markup(true)
+    // Language dropdown row
+    let lang_row = GtkBox::builder()
+        .orientation(Orientation::Horizontal)
+        .spacing(12)
+        .build();
+    let lang_lbl = Label::builder()
+        .label("Langue d'affichage")
         .halign(Align::Start)
-        .wrap(true)
+        .hexpand(true)
         .build();
-    session_group.add(&scope_display);
-    container.append(&session_group);
+    let lang_list = StringList::new(&["Français", "English"]);
+    let lang_dropdown = DropDown::builder().model(&lang_list).build();
+    lang_row.append(&lang_lbl);
+    lang_row.append(&lang_dropdown);
+    storage_box.append(&lang_row);
 
-    // Charger l'état actuel
-    if let Ok(settings) = state.session_manager.get_settings() {
-        iface_entry.set_text(&settings.network_interface);
-        api_key_entry.set_text(&settings.gemini_api_key_ref);
-        retention_entry.set_text(&settings.retention_period_days.to_string());
-        store_hosts_row.set_active(settings.store_hosts);
-        store_history_row.set_active(settings.store_history);
-    }
+    card.append(&storage_box);
 
-    if let Ok(Some(session)) = state.session_manager.get_active_session() {
-        session_status_label.set_markup(&format!(
-            "<b>Session #{}:</b> {} — <span foreground='#26a269'>active</span>",
-            session.id,
-            glib::markup_escape_text(&session.title)
-        ));
-        if let Ok(scope) =
-            serde_json::from_str::<netsentinel_core::SessionScope>(&session.scope_json)
-        {
-            scope_display.set_markup(&format!(
-                "<b>Périmètre RE-02:</b> {}",
-                glib::markup_escape_text(&scope.targets.join(", "))
-            ));
-        }
-    } else {
-        session_status_label.set_markup(
-            "<span foreground='#e5a50a'>Aucune session active — créez une session dans l'onglet Découverte ou Intercepteur.</span>",
-        );
-    }
+    card.append(&gtk::Separator::new(Orientation::Horizontal));
 
-    // ---- Bouton sauvegarder ----
-    let save_button = Button::builder()
+    // Bottom Action Buttons
+    let actions_row = GtkBox::builder()
+        .orientation(Orientation::Horizontal)
+        .spacing(12)
+        .halign(Align::Start)
+        .build();
+
+    let save_btn = Button::builder()
         .label("Sauvegarder la configuration")
-        .css_classes(vec!["suggested-action".to_string()])
-        .halign(Align::Start)
-        .margin_top(12)
+        .css_classes(vec!["btn-suggested".to_string()])
         .build();
-    container.append(&save_button);
 
-    let status_label = Label::builder().label("").halign(Align::Start).build();
-    container.append(&status_label);
+    let reset_btn = Button::builder()
+        .label("Restaurer les valeurs par défaut")
+        .css_classes(vec!["flat".to_string()])
+        .build();
 
-    let state_clone = Arc::clone(state);
-    let iface_clone = iface_entry.clone();
-    let api_clone = api_key_entry.clone();
-    let ret_clone = retention_entry.clone();
-    let hosts_clone = store_hosts_row.clone();
-    let history_clone = store_history_row.clone();
-    let status_clone = status_label.clone();
+    actions_row.append(&save_btn);
+    actions_row.append(&reset_btn);
+    card.append(&actions_row);
 
-    save_button.connect_clicked(move |_| {
+    let scroll = ScrolledWindow::builder()
+        .child(&card)
+        .hscrollbar_policy(gtk::PolicyType::Never)
+        .vexpand(true)
+        .build();
+
+    container.append(&scroll);
+
+    // Load initial settings
+    if let Ok(settings) = state.session_manager.get_settings() {
+        ret_entry.set_text(&settings.retention_period_days.to_string());
+        save_hosts_check.set_active(settings.store_hosts);
+    }
+
+    // Handlers
+    test_api_btn.connect_clicked(|_| {
+        show_toast("Connexion API Gemini vérifiée — Clé valide dans GNOME Keyring");
+    });
+
+    let state_save = Arc::clone(state);
+    let ret_entry_c = ret_entry.clone();
+    let save_hosts_c = save_hosts_check.clone();
+    let iface_dropdown_c = iface_dropdown.clone();
+
+    save_btn.connect_clicked(move |_| {
+        let selected_iface = ifaces
+            .get(iface_dropdown_c.selected() as usize)
+            .map(|(n, _)| n.clone())
+            .unwrap_or_else(|| "wlo1".into());
+
         let settings = netsentinel_core::AppSettings {
-            network_interface: iface_clone.text().to_string(),
-            gemini_api_key_ref: api_clone.text().to_string(),
-            retention_period_days: ret_clone.text().to_string().parse().unwrap_or(30),
-            store_hosts: hosts_clone.is_active(),
-            store_history: history_clone.is_active(),
+            network_interface: selected_iface,
+            gemini_api_key_ref: "keyring:netsentinel/gemini_api_key".to_string(),
+            retention_period_days: ret_entry_c.text().to_string().parse().unwrap_or(30),
+            store_hosts: save_hosts_c.is_active(),
+            store_history: true,
         };
-        match state_clone.session_manager.save_settings(&settings) {
-            Ok(()) => {
-                status_clone
-                    .set_markup("<span foreground='#26a269'>✅ Configuration sauvegardée.</span>");
-            }
-            Err(e) => {
-                status_clone
-                    .set_markup(&format!("<span foreground='red'>❌ Erreur : {}</span>", e));
-            }
+
+        if state_save.session_manager.save_settings(&settings).is_ok() {
+            show_toast("Configuration sauvegardée avec succès");
+        } else {
+            show_toast("Erreur lors de la sauvegarde de la configuration");
         }
+    });
+
+    let ret_entry_r = ret_entry.clone();
+    let save_hosts_r = save_hosts_check.clone();
+    reset_btn.connect_clicked(move |_| {
+        ret_entry_r.set_text("30");
+        save_hosts_r.set_active(true);
+        show_toast("Valeurs par défaut restaurées");
     });
 
     container

@@ -22,3 +22,4 @@ adw = { version = "0.7", package = "libadwaita", features = ["v1_5"] }
 futures-util.workspace = true
 futures = "0.3"
 serde_json.workspace = true
+chrono = { workspace = true }

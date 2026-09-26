@@ -102,6 +102,8 @@ pub struct SessionHost {
     pub mac: String,
     pub vendor: String,
     pub hostname: String,
+    #[serde(default)]
+    pub os: String,
     pub discovered_at: String,
 }
 
@@ -193,25 +195,30 @@ impl SessionManager {
                  FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
              );
 
-             CREATE TABLE IF NOT EXISTS session_hosts (
-                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                 session_id INTEGER NOT NULL,
-                 ip TEXT NOT NULL,
-                 mac TEXT NOT NULL,
-                 vendor TEXT NOT NULL DEFAULT '',
-                 hostname TEXT NOT NULL DEFAULT '',
-                 discovered_at TEXT NOT NULL,
-                 FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
-             );
+              CREATE TABLE IF NOT EXISTS session_hosts (
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  session_id INTEGER NOT NULL,
+                  ip TEXT NOT NULL,
+                  mac TEXT NOT NULL,
+                  vendor TEXT NOT NULL DEFAULT '',
+                  hostname TEXT NOT NULL DEFAULT '',
+                  os TEXT NOT NULL DEFAULT '',
+                  discovered_at TEXT NOT NULL,
+                  FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+              );
 
              CREATE TABLE IF NOT EXISTS app_settings (
                  key TEXT PRIMARY KEY,
                  value TEXT NOT NULL
              );
 
-             CREATE INDEX IF NOT EXISTS idx_findings_session ON session_findings(session_id);
-             CREATE INDEX IF NOT EXISTS idx_hosts_session ON session_hosts(session_id);",
+              CREATE INDEX IF NOT EXISTS idx_findings_session ON session_findings(session_id);
+              CREATE INDEX IF NOT EXISTS idx_hosts_session ON session_hosts(session_id);",
         )?;
+        let _ = conn.execute(
+            "ALTER TABLE session_hosts ADD COLUMN os TEXT NOT NULL DEFAULT ''",
+            [],
+        );
         Ok(())
     }
 
@@ -381,12 +388,24 @@ impl SessionManager {
         vendor: &str,
         hostname: &str,
     ) -> Result<SessionHost> {
+        self.add_host_full(session_id, ip, mac, vendor, hostname, "")
+    }
+
+    pub fn add_host_full(
+        &self,
+        session_id: i64,
+        ip: &str,
+        mac: &str,
+        vendor: &str,
+        hostname: &str,
+        os: &str,
+    ) -> Result<SessionHost> {
         let now = Utc::now().to_rfc3339();
         let conn = self.conn.lock().map_err(|e| anyhow!("lock: {}", e))?;
         conn.execute(
-            "INSERT INTO session_hosts (session_id, ip, mac, vendor, hostname, discovered_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![session_id, ip, mac, vendor, hostname, now],
+            "INSERT INTO session_hosts (session_id, ip, mac, vendor, hostname, os, discovered_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![session_id, ip, mac, vendor, hostname, os, now],
         )?;
         let id = conn.last_insert_rowid();
         Ok(SessionHost {
@@ -396,12 +415,31 @@ impl SessionManager {
             mac: mac.to_string(),
             vendor: vendor.to_string(),
             hostname: hostname.to_string(),
+            os: os.to_string(),
             discovered_at: now,
         })
     }
 
     pub fn get_hosts(&self, session_id: i64) -> Result<Vec<SessionHost>> {
         let conn = self.conn.lock().map_err(|e| anyhow!("lock: {}", e))?;
+        if let Ok(mut stmt) = conn.prepare(
+            "SELECT id, session_id, ip, mac, vendor, hostname, os, discovered_at
+             FROM session_hosts WHERE session_id = ?1 ORDER BY id ASC",
+        ) {
+            let rows = stmt.query_map(params![session_id], |row| {
+                Ok(SessionHost {
+                    id: row.get(0)?,
+                    session_id: row.get(1)?,
+                    ip: row.get(2)?,
+                    mac: row.get(3)?,
+                    vendor: row.get(4)?,
+                    hostname: row.get(5)?,
+                    os: row.get(6)?,
+                    discovered_at: row.get(7)?,
+                })
+            })?;
+            return Ok(rows.filter_map(|r| r.ok()).collect());
+        }
         let mut stmt = conn.prepare(
             "SELECT id, session_id, ip, mac, vendor, hostname, discovered_at
              FROM session_hosts WHERE session_id = ?1 ORDER BY id ASC",
@@ -414,6 +452,7 @@ impl SessionManager {
                 mac: row.get(3)?,
                 vendor: row.get(4)?,
                 hostname: row.get(5)?,
+                os: String::new(),
                 discovered_at: row.get(6)?,
             })
         })?;

@@ -31,9 +31,6 @@ struct CaptureService {
 }
 
 fn default_pcap_path() -> PathBuf {
-    // System daemons must not write into HOME or /tmp: both locations are
-    // blocked by ProtectHome/PrivateTmp and are not covered by AppArmor.
-    // StateDirectory=netsentinel/captures creates this path for the service.
     let base = std::env::var_os("NETSENTINEL_CAPTURE_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("/var/lib/netsentinel/captures"));
@@ -42,6 +39,16 @@ fn default_pcap_path() -> PathBuf {
         .unwrap_or_default()
         .as_secs();
     base.join(format!("capture_{}.pcap", ts))
+}
+
+fn fallback_pcap_path() -> PathBuf {
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    std::env::temp_dir()
+        .join("netsentinel-captures")
+        .join(format!("capture_{}.pcap", ts))
 }
 
 #[interface(name = "org.netsentinel.Capture1")]
@@ -57,8 +64,27 @@ impl CaptureService {
         let pcap_path = default_pcap_path();
         tracing::info!(interface, path = %pcap_path.display(), "démarrage capture eBPF + PCAP");
 
-        let pcap_writer = PcapWriter::create(&pcap_path)
-            .map_err(|e| zbus::fdo::Error::Failed(format!("erreur création PCAP: {e}")))?;
+        let (pcap_path, pcap_writer) = match PcapWriter::create(&pcap_path) {
+            Ok(w) => (pcap_path, w),
+            Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
+                let fb = fallback_pcap_path();
+                tracing::warn!(primary = %pcap_path.display(), fallback = %fb.display(), "PCAP primaire refusé ({e}), repli /tmp");
+                let w = PcapWriter::create(&fb).map_err(|e2| {
+                    zbus::fdo::Error::Failed(format!(
+                        "erreur création PCAP ({} puis {}: {e2}; vérifier AppArmor/droits /var/lib/netsentinel/captures)",
+                        pcap_path.display(),
+                        fb.display()
+                    ))
+                })?;
+                (fb, w)
+            }
+            Err(e) => {
+                return Err(zbus::fdo::Error::Failed(format!(
+                    "erreur création PCAP ({}: {e})",
+                    pcap_path.display()
+                )))
+            }
+        };
         let pcap_writer = Arc::new(Mutex::new(pcap_writer));
 
         // 1. Charger le programme eBPF
@@ -85,7 +111,9 @@ impl CaptureService {
         program
             .attach(interface, aya::programs::xdp::XdpMode::default())
             .map_err(|e| {
-                zbus::fdo::Error::Failed(format!("erreur attach XDP sur {interface}: {e}"))
+                zbus::fdo::Error::Failed(format!(
+                    "erreur attach XDP sur {interface}: {e} (XDP non supporté sur Wi-Fi/virtuel ? essayer eth0)"
+                ))
             })?;
 
         // 3. PerfEventArray → signaux D-Bus + écriture PCAP
@@ -147,8 +175,14 @@ impl CaptureService {
                             let ptr = data.as_ptr() as *const PacketLog;
                             let log = unsafe { ptr.read_unaligned() };
 
-                            let src = std::net::Ipv4Addr::from(log.src_addr).to_string();
-                            let dst = std::net::Ipv4Addr::from(log.dst_addr).to_string();
+                            let (src, dst) = if log.protocol == 253 {
+                                ("ARP".to_string(), String::new())
+                            } else {
+                                (
+                                    std::net::Ipv4Addr::from(log.src_addr).to_string(),
+                                    std::net::Ipv4Addr::from(log.dst_addr).to_string(),
+                                )
+                            };
 
                             let ts_ms = std::time::SystemTime::now()
                                 .duration_since(std::time::UNIX_EPOCH)
@@ -163,10 +197,19 @@ impl CaptureService {
                                     6 => "TCP".to_string(),
                                     17 => "UDP".to_string(),
                                     1 => "ICMP".to_string(),
-                                    p => format!("Proto {}", p),
+                                    58 => "ICMPv6".to_string(),
+                                    2 => "IGMP".to_string(),
+                                    47 => "GRE".to_string(),
+                                    50 => "ESP".to_string(),
+                                    51 => "AH".to_string(),
+                                    89 => "OSPF".to_string(),
+                                    253 => "ARP".to_string(),
+                                    p => format!("Proto {p}"),
                                 },
                                 length: log.length,
                                 unencrypted: log.unencrypted == 1,
+                                src_port: log.src_port,
+                                dst_port: log.dst_port,
                             };
 
                             // Écriture PCAP

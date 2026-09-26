@@ -39,7 +39,7 @@ impl DiscoverService {
         interface: &str,
         timeout_ms: u32,
     ) -> zbus::fdo::Result<Vec<DiscoveredHost>> {
-        let iface_name = interface.to_string();
+        let iface_name = interface.trim().to_string();
         let timeout = Duration::from_millis(timeout_ms as u64);
 
         tracing::info!(interface = %iface_name, ?timeout, "démarrage du scan ARP");
@@ -121,7 +121,11 @@ fn arp_scan(iface_name: &str, timeout: Duration) -> Result<Vec<DiscoveredHost>> 
         })
         .ok_or_else(|| anyhow!("aucune adresse IPv4 sur {iface_name}"))?;
 
-    let (mut tx, mut rx) = match datalink::channel(&interface, Default::default())
+    let config = pnet::datalink::Config {
+        read_timeout: Some(Duration::from_millis(100)),
+        ..Default::default()
+    };
+    let (mut tx, mut rx) = match datalink::channel(&interface, config)
         .context("ouverture du canal datalink (nécessite CAP_NET_RAW)")?
     {
         Channel::Ethernet(tx, rx) => (tx, rx),
@@ -131,19 +135,55 @@ fn arp_scan(iface_name: &str, timeout: Duration) -> Result<Vec<DiscoveredHost>> 
     let targets = subnet_hosts(source_ip.0, source_ip.1);
     tracing::debug!(count = targets.len(), "envoi des requêtes ARP");
 
-    for target_ip in &targets {
-        if let Some(packet) = build_arp_request(source_mac, source_ip.0, *target_ip) {
-            tx.send_to(&packet, None);
+    let mut found: HashMap<Ipv4Addr, DiscoveredHost> = HashMap::new();
+    // 1. Cache ARP existant (passerelle, pairs déjà vus) — gratuit, instantané.
+    for host in read_arp_cache() {
+        if let Ok(ip) = host.ip.parse() {
+            found.entry(ip).or_insert(host);
         }
     }
 
-    let mut found: HashMap<Ipv4Addr, DiscoveredHost> = HashMap::new();
+    // 2. Envoi étalé + écoute entrelacée : 2 passes pour réveiller les
+    // appareils Wi-Fi en power-save (DORMANT) qui ratent le 1er broadcast.
     let deadline = std::time::Instant::now() + timeout;
+    for pass in 0..2 {
+        for chunk in targets.chunks(64) {
+            if std::time::Instant::now() >= deadline {
+                break;
+            }
+            for target_ip in chunk {
+                if *target_ip == source_ip.0 {
+                    continue;
+                }
+                if let Some(packet) = build_arp_request(source_mac, source_ip.0, *target_ip) {
+                    tx.send_to(&packet, None);
+                }
+            }
+            let listen_until = std::time::Instant::now() + Duration::from_millis(400);
+            while std::time::Instant::now() < listen_until.min(deadline) {
+                match rx.next() {
+                    Ok(frame) => {
+                        if let Some(host) = parse_arp_frame(frame, &source_ip.0, &source_mac) {
+                            if let Ok(ip) = host.ip.parse() {
+                                found.entry(ip).or_insert(host);
+                            }
+                        }
+                    }
+                    Err(e) if e.kind() == std::io::ErrorKind::TimedOut => continue,
+                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => continue,
+                    Err(e) => return Err(e.into()),
+                }
+            }
+        }
+        tracing::debug!(pass, count = found.len(), "passe ARP terminée");
+        let _ = pass;
+    }
 
+    // 3. Drain final jusqu'à la deadline.
     while std::time::Instant::now() < deadline {
         match rx.next() {
             Ok(frame) => {
-                if let Some(host) = parse_arp_reply(frame) {
+                if let Some(host) = parse_arp_frame(frame, &source_ip.0, &source_mac) {
                     if let Ok(ip) = host.ip.parse() {
                         found.entry(ip).or_insert(host);
                     } else {
@@ -152,18 +192,74 @@ fn arp_scan(iface_name: &str, timeout: Duration) -> Result<Vec<DiscoveredHost>> 
                 }
             }
             Err(e) if e.kind() == std::io::ErrorKind::TimedOut => continue,
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => continue,
             Err(e) => return Err(e.into()),
         }
     }
 
-    Ok(found.into_values().collect())
+    // 4. Re-fusion cache (voisins apparus pendant le scan).
+    for host in read_arp_cache() {
+        if let Ok(ip) = host.ip.parse() {
+            found.entry(ip).or_insert(host);
+        }
+    }
+
+    // 5. Hostnames via NSS (PTR/mDNS) + OS via TTL + vendor déjà renseigné.
+    let mut out: Vec<DiscoveredHost> = found.into_values().collect();
+    for h in &mut out {
+        if h.hostname.is_empty() {
+            h.hostname = resolve_hostname(&h.ip);
+        }
+        if h.os.is_empty() {
+            h.os = guess_os(&h.ip, &h.vendor, &h.mac, &h.hostname);
+        }
+    }
+    out.sort_by(|a, b: &DiscoveredHost| a.ip.cmp(&b.ip));
+    Ok(out)
+}
+
+/// Lit la table ARP du noyau (`/proc/net/arp`) : voisins déjà connus
+/// (passerelle .1, appareils actifs) même s'ils ratent le broadcast.
+fn read_arp_cache() -> Vec<DiscoveredHost> {
+    let mut out = Vec::new();
+    let Ok(content) = std::fs::read_to_string("/proc/net/arp") else {
+        return out;
+    };
+    for line in content.lines().skip(1) {
+        let f: Vec<&str> = line.split_whitespace().collect();
+        if f.len() < 6 {
+            continue;
+        }
+        let (ip, mac) = (f[0], f[3]);
+        if mac == "00:00:00:00:00:00" || ip.parse::<std::net::Ipv4Addr>().is_err() {
+            continue;
+        }
+        out.push(DiscoveredHost {
+            ip: ip.to_string(),
+            mac: mac.to_string(),
+            vendor: lookup_mac_vendor(mac),
+            hostname: String::new(),
+            os: String::new(),
+        });
+    }
+    out
 }
 
 fn find_interface(name: &str) -> Result<NetworkInterface> {
-    datalink::interfaces()
-        .into_iter()
-        .find(|i| i.name == name)
-        .ok_or_else(|| anyhow!("interface réseau introuvable: {name}"))
+    let name = name.trim();
+    let ifaces = datalink::interfaces();
+    if let Some(found) = ifaces.iter().find(|i| i.name == name) {
+        return Ok(found.clone());
+    }
+    let available: Vec<String> = ifaces.iter().map(|i| i.name.clone()).collect();
+    Err(anyhow!(
+        "interface réseau introuvable: {name} (disponibles: {})",
+        if available.is_empty() {
+            "<aucune>".to_string()
+        } else {
+            available.join(", ")
+        }
+    ))
 }
 
 /// Génère la liste des adresses hôtes du sous-réseau (exclut réseau/broadcast).
@@ -216,13 +312,30 @@ fn build_arp_request(
     Some(ethernet_packet.packet().to_vec())
 }
 
+fn parse_arp_frame(
+    frame: &[u8],
+    self_ip: &Ipv4Addr,
+    self_mac: &pnet::datalink::MacAddr,
+) -> Option<DiscoveredHost> {
+    let host = parse_arp_reply(frame)?;
+    if &host.ip == &self_ip.to_string() || host.mac == self_mac.to_string() {
+        return None;
+    }
+    Some(host)
+}
+
 fn parse_arp_reply(frame: &[u8]) -> Option<DiscoveredHost> {
     let eth = EthernetPacket::new(frame)?;
     if eth.get_ethertype() != EtherTypes::Arp {
         return None;
     }
     let arp = ArpPacket::new(eth.payload())?;
-    if arp.get_operation() != ArpOperations::Reply {
+    let op = arp.get_operation();
+    if op != ArpOperations::Reply && op != ArpOperations::Request {
+        return None;
+    }
+    let sender_ip = arp.get_sender_proto_addr();
+    if sender_ip.is_unspecified() || sender_ip.is_loopback() {
         return None;
     }
 
@@ -233,17 +346,29 @@ fn parse_arp_reply(frame: &[u8]) -> Option<DiscoveredHost> {
         ip: arp.get_sender_proto_addr().to_string(),
         mac: mac_str,
         vendor,
-        hostname: String::new(), // résolution mDNS/NetBIOS optionnelle
+        hostname: String::new(),
+        os: String::new(),
     })
 }
 
 fn lookup_mac_vendor(mac_str: &str) -> String {
     let normalized = mac_str.to_uppercase().replace('-', ":");
-    let prefix = if normalized.len() >= 8 {
-        &normalized[..8]
-    } else {
+    if normalized.len() < 8 {
         return "Inconnu".to_string();
-    };
+    }
+    if let Some(first) = normalized.split(':').next() {
+        if first.len() == 2 {
+            if let Ok(b) = u8::from_str_radix(first, 16) {
+                if b & 0x02 != 0 {
+                    return "MAC aléatoire (privée)".to_string();
+                }
+            }
+        }
+    }
+    let prefix = &normalized[..8];
+    if let Some(name) = lookup_oui_file(prefix) {
+        return name;
+    }
 
     match prefix {
         "00:05:69" | "00:0C:29" | "00:50:56" | "00:1C:14" => "VMware, Inc.",
@@ -289,6 +414,178 @@ fn lookup_mac_vendor(mac_str: &str) -> String {
         _ => "Inconnu",
     }
     .to_string()
+}
+
+fn lookup_oui_file(prefix: &str) -> Option<String> {
+    let want = prefix.replace([':', '-', ' '], "").to_uppercase();
+    for path in [
+        "/usr/share/nmap/nmap-mac-prefixes",
+        "/usr/share/wireshark/manuf",
+        "/var/lib/ieee-data/oui.txt",
+    ] {
+        let Ok(content) = std::fs::read_to_string(path) else {
+            continue;
+        };
+        for line in content.lines() {
+            let l = line.trim();
+            if l.is_empty() || l.starts_with('#') {
+                continue;
+            }
+            let up = l.to_uppercase().replace([':', '-', '\t'], " ");
+            let mut parts = up.split_whitespace();
+            let Some(first) = parts.next() else { continue };
+            if first.replace(' ', "") == want || first == want {
+                let name = l[6.min(l.len())..]
+                    .trim()
+                    .trim_start_matches(['-', ':', ';', '\t', ' '])
+                    .trim();
+                let short = if path.contains("nmap") {
+                    l.split_whitespace()
+                        .skip(1)
+                        .take(4)
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                } else {
+                    name.split('#').next().unwrap_or(name).trim().to_string()
+                };
+                if !short.is_empty() {
+                    return Some(short);
+                }
+            }
+        }
+    }
+    None
+}
+
+fn resolve_hostname(ip: &str) -> String {
+    use std::process::Command;
+    use std::time::Duration;
+    let run = |prog: &str, args: &[&str]| -> Option<String> {
+        let mut child = Command::new(prog)
+            .args(args)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .ok()?;
+        let start = std::time::Instant::now();
+        loop {
+            match child.try_wait() {
+                Ok(Some(_)) => break,
+                Ok(None) => {
+                    if start.elapsed() > Duration::from_millis(600) {
+                        let _ = child.kill();
+                        return None;
+                    }
+                    std::thread::sleep(Duration::from_millis(20));
+                }
+                Err(_) => return None,
+            }
+        }
+        let out = child.wait_with_output().ok()?;
+        let txt = String::from_utf8_lossy(&out.stdout);
+        for token in txt.split_whitespace() {
+            let t = token.trim_end_matches('.').trim();
+            if t.is_empty() || t.parse::<std::net::IpAddr>().is_ok() {
+                continue;
+            }
+            if t.eq_ignore_ascii_case("IN")
+                || t.eq_ignore_ascii_case("A")
+                || t.eq_ignore_ascii_case("PTR")
+            {
+                continue;
+            }
+            return Some(t.to_string());
+        }
+        None
+    };
+    if let Some(n) = run("getent", &["hosts", ip]) {
+        if n != ip {
+            return n;
+        }
+    }
+    if let Some(n) = run("avahi-resolve", &["-a", ip]) {
+        if n != ip {
+            return n;
+        }
+    }
+    String::new()
+}
+
+fn ping_ttl(ip: &str) -> Option<u32> {
+    let out = std::process::Command::new("ping")
+        .args(["-c1", "-W1", ip])
+        .output()
+        .ok()?;
+    let txt = String::from_utf8_lossy(&out.stdout).to_lowercase();
+    txt.split("ttl=")
+        .nth(1)?
+        .split_whitespace()
+        .next()?
+        .trim_matches(|c: char| !c.is_ascii_digit())
+        .parse()
+        .ok()
+}
+
+fn guess_os(ip: &str, vendor: &str, mac: &str, hostname: &str) -> String {
+    let v = vendor.to_lowercase();
+    let h = hostname.to_lowercase();
+    if h.contains("gateway")
+        || h.contains("router")
+        || h.contains("box")
+        || ip.ends_with(".1")
+        || ip.ends_with(".254")
+    {
+        return "Routeur / Box".to_string();
+    }
+    if v.contains("raspberry") || v.contains("espressif") {
+        return "IoT (Linux)".to_string();
+    }
+    if v.contains("cisco") || v.contains("aruba") {
+        return "Équipement réseau".to_string();
+    }
+    match ping_ttl(ip) {
+        Some(t) if t >= 127 => "Windows".to_string(),
+        Some(t) if t >= 250 => "Équipement réseau".to_string(),
+        Some(_) => {
+            if v.contains("apple") {
+                "macOS / iOS".to_string()
+            } else if v.contains("samsung")
+                || v.contains("xiaomi")
+                || v.contains("huawei")
+                || v.contains("oneplus")
+            {
+                "Android".to_string()
+            } else if v.contains("aléatoire") || v.contains("privée") {
+                if mac.to_uppercase().starts_with("02:") || h.contains("android") {
+                    "Android (MAC privée)".to_string()
+                } else {
+                    "Mobile (MAC privée)".to_string()
+                }
+            } else if v.contains("intel")
+                || v.contains("dell")
+                || v.contains("hp")
+                || v.contains("asus")
+                || v.contains("lenovo")
+            {
+                "Linux / Windows".to_string()
+            } else {
+                "Linux".to_string()
+            }
+        }
+        None => {
+            if v.contains("apple") {
+                "macOS / iOS".to_string()
+            } else if v.contains("samsung") || v.contains("android") {
+                "Android".to_string()
+            } else if v.contains("windows") {
+                "Windows".to_string()
+            } else if v.contains("aléatoire") {
+                "Mobile (MAC privée)".to_string()
+            } else {
+                String::new()
+            }
+        }
+    }
 }
 
 #[tokio::main]

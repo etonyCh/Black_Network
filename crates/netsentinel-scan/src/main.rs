@@ -24,18 +24,22 @@ impl ScanService {
     async fn deep_scan(&self, target: &str) -> zbus::fdo::Result<Vec<ScanFinding>> {
         tracing::info!(%target, "démarrage du scan approfondi");
 
-        let mut findings = run_nmap(target)
-            .await
-            .map_err(|e| zbus::fdo::Error::Failed(format!("échec nmap: {e}")))?;
+        let mut findings =
+            tokio::time::timeout(std::time::Duration::from_secs(100), run_nmap(target))
+                .await
+                .map_err(|_| zbus::fdo::Error::Failed("timeout nmap (>100s)".into()))?
+                .map_err(|e| zbus::fdo::Error::Failed(format!("échec nmap: {e}")))?;
 
-        match run_nuclei(target).await {
-            Ok(nf) => {
-                findings.extend(nf);
-            }
-            Err(e) => {
-                // Dégradation gracieuse : nuclei non packagé sur Ubuntu par défaut
-                // On loggue, mais on retourne quand même les findings nmap.
+        if std::env::var_os("NETSENTINEL_SKIP_NUCLEI").is_some() {
+            return Ok(findings);
+        }
+        match tokio::time::timeout(std::time::Duration::from_secs(100), run_nuclei(target)).await {
+            Ok(Ok(nf)) => findings.extend(nf),
+            Ok(Err(e)) => {
                 warn!(%target, "Nuclei indisponible (optionnel) — poursuite avec nmap seul: {e}");
+            }
+            Err(_) => {
+                warn!(%target, "Nuclei timeout (>100s) — poursuite avec nmap seul");
             }
         }
 
@@ -47,11 +51,29 @@ impl ScanService {
 /// Découverte de ports/services via nmap, sortie "greppable" (`-oG -`) qui
 /// évite une dépendance de parsing XML pour ce scaffold.
 async fn run_nmap(target: &str) -> Result<Vec<ScanFinding>> {
-    let output = Command::new("nmap")
-        .args(["-sV", "-oG", "-", target])
+    let bin = if std::path::Path::new("/usr/bin/nmap").exists() {
+        "/usr/bin/nmap"
+    } else {
+        "nmap"
+    };
+    let output = Command::new(bin)
+        .args([
+            "-sV",
+            "-T4",
+            "-F",
+            "--host-timeout",
+            "60s",
+            "-oG",
+            "-",
+            target,
+        ])
         .output()
         .await
-        .context("lancement de nmap (vérifier qu'il est installé et dans le PATH)")?;
+        .map_err(|e| {
+            anyhow::anyhow!(
+                "lancement de nmap ({bin}: {e}; vérifier installation + profil AppArmor ix)"
+            )
+        })?;
 
     if !output.status.success() {
         anyhow::bail!("nmap a retourné un code d'erreur: {}", output.status);
@@ -116,7 +138,21 @@ struct NucleiClassification {
 /// mise à jour des YAML (templating offline uniquement via ceux installés
 /// système dans /usr/share/nuclei-templates/ ou le PPA ProjectDiscovery).
 async fn run_nuclei(target: &str) -> Result<Vec<ScanFinding>> {
-    let output = Command::new("nuclei")
+    let bin = ["/usr/bin/nuclei", "/usr/local/bin/nuclei", "nuclei"]
+        .into_iter()
+        .find(|p| {
+            if p.contains('/') {
+                std::path::Path::new(p).exists()
+            } else {
+                true
+            }
+        })
+        .unwrap_or("nuclei");
+    if bin.contains('/') && !std::path::Path::new(bin).exists() {
+        tracing::info!("nuclei absent, audit dégradé nmap seul");
+        return Ok(Vec::new());
+    }
+    let output = Command::new(bin)
         .args([
             "-target",
             target,
@@ -126,6 +162,18 @@ async fn run_nuclei(target: &str) -> Result<Vec<ScanFinding>> {
             "-ut",
             "-update-templates-url",
             "file:///usr/share/nuclei-templates",
+            "-timeout",
+            "5",
+            "-rl",
+            "150",
+            "-c",
+            "25",
+            "-retries",
+            "0",
+            "-severity",
+            "critical,high,medium",
+            "-etags",
+            "intrusive,fuzz",
         ])
         .output()
         .await

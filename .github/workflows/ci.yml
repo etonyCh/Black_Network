@@ -166,23 +166,19 @@ jobs:
           install -m 0755 "target/$TARGET_PROFILE/netsentinel-discoverd"  "$STAGING/$LIBEXEC/"
           install -m 0755 "target/$TARGET_PROFILE/netsentinel-scand"      "$STAGING/$LIBEXEC/"
           install -m 0755 "target/$TARGET_PROFILE/netsentinel-captured"   "$STAGING/$LIBEXEC/"
-          install -m 0755 "target/$TARGET_PROFILE/netsentinel-interceptd" "$STAGING/$LIBEXEC/"
           install -m 0755 "target/$TARGET_PROFILE/netsentinel"            "$STAGING/$INSTALL_ROOT/bin/netsentinel"
 
           install -m 0644 packaging/dbus-system.d/org.netsentinel.Discover1.conf "$STAGING/$DBUS_CONF/"
           install -m 0644 packaging/dbus-system.d/org.netsentinel.Capture1.conf  "$STAGING/$DBUS_CONF/"
           install -m 0644 packaging/dbus-system.d/org.netsentinel.Scan1.conf     "$STAGING/$DBUS_CONF/"
-          install -m 0644 packaging/dbus-system.d/org.netsentinel.Intercept1.conf "$STAGING/$DBUS_CONF/"
 
           install -m 0644 packaging/apparmor/usr.libexec.netsentinel-discoverd  "$STAGING/$APPARMOR_DIR/"
           install -m 0644 packaging/apparmor/usr.libexec.netsentinel-scand      "$STAGING/$APPARMOR_DIR/"
           install -m 0644 packaging/apparmor/usr.libexec.netsentinel-captured   "$STAGING/$APPARMOR_DIR/"
-          install -m 0644 packaging/apparmor/usr.libexec.netsentinel-interceptd "$STAGING/$APPARMOR_DIR/"
 
           install -m 0644 packaging/systemd/netsentinel-discoverd.service  "$STAGING/$SYSTEMD_UNITS/"
           install -m 0644 packaging/systemd/netsentinel-scand.service      "$STAGING/$SYSTEMD_UNITS/"
           install -m 0644 packaging/systemd/netsentinel-captured.service   "$STAGING/$SYSTEMD_UNITS/"
-          install -m 0644 packaging/systemd/netsentinel-interceptd.service "$STAGING/$SYSTEMD_UNITS/"
 
           install -m 0755 packaging/debian/postinst "$STAGING/DEBIAN/postinst"
 
