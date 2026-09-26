@@ -40,8 +40,6 @@ pub enum ActionType {
     Discover,
     Scan,
     Capture,
-    InterceptStart,
-    InterceptEnd,
     SessionCreate,
     ReportGenerate,
     Export,
@@ -305,11 +303,11 @@ impl PDDLRule for RE02TimeoutRule {
     }
 
     fn evaluate(&self, action: &PDDLAction, ctx: &PDDLContext) -> PDDLResult {
-        if action.requires_unicity || action.action_type == ActionType::InterceptStart {
+        if action.requires_unicity || action.action_type == ActionType::Capture {
             if ctx.session_already_active {
                 return PDDLResult::non_compliant(
                     self.id(),
-                    "session intercept déjà active (RE-02b : unicité)",
+                    "session de capture déjà active (RE-02b : unicité)",
                 );
             }
 
@@ -328,7 +326,7 @@ impl PDDLRule for RE02TimeoutRule {
 
         if matches!(
             action.action_type,
-            ActionType::Capture | ActionType::Scan | ActionType::InterceptStart
+            ActionType::Capture | ActionType::Scan
         ) {
             if let Some(started_at) = ctx.session_started_at {
                 let now = SystemTime::now()
@@ -422,7 +420,7 @@ mod tests {
     fn test_re01_consent_rule() {
         let engine = PDDLEngine::default_rules();
         let action = PDDLAction {
-            action_type: ActionType::InterceptStart,
+            action_type: ActionType::Capture,
             requires_consent: true,
             ..Default::default()
         };
@@ -472,7 +470,7 @@ mod tests {
     fn test_re02b_timeout_rule() {
         let rule = RE02TimeoutRule;
         let action = PDDLAction {
-            action_type: ActionType::InterceptStart,
+            action_type: ActionType::Capture,
             requires_unicity: true,
             ..Default::default()
         };
