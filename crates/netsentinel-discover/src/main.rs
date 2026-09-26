@@ -318,7 +318,7 @@ fn parse_arp_frame(
     self_mac: &pnet::datalink::MacAddr,
 ) -> Option<DiscoveredHost> {
     let host = parse_arp_reply(frame)?;
-    if &host.ip == &self_ip.to_string() || host.mac == self_mac.to_string() {
+    if host.ip == self_ip.to_string() || host.mac == self_mac.to_string() {
         return None;
     }
     Some(host)

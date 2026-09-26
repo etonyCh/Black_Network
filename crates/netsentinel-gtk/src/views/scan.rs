@@ -372,7 +372,7 @@ fn create_vuln_card(title: &str, desc: &str, remediation: &str, sev: Severity) -
         .build();
 
     let rec_lbl = Label::builder()
-        .label(&format!(
+        .label(format!(
             "<span foreground='#94a3b8' size='small'>💡 Remédiation : {}</span>",
             remediation
         ))
